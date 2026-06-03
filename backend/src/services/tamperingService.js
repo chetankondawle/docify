@@ -90,8 +90,8 @@ const checkMetadataConsistency = async (filePath) => {
 
     return {
       passed: !inconsistent,
-      creationDate: creationDate || 'Unknown',
-      modificationDate: modDate || 'Unknown',
+      creationDate: creationDate.toDateString() || 'Unknown',
+      modificationDate: modDate.toDateString() || 'Unknown',
       producer: info.info || 'Unknown',
       inconsistent,
       message: inconsistent
