@@ -83,16 +83,15 @@ const checkMetadataConsistency = async (filePath) => {
   try {
     const data = new PDFParse({url:filePath});
     const info = await data.getInfo();
-    const creationDate = extractDate(info.getDateNode().CreationDate);
-    const modDate = extractDate(info.getDateNode().CreationDate);
-
+    const creationDate = extractDate(info.info.CreationDate);
+    const modDate = extractDate(info.info.ModDate);
     const inconsistent = modDate && creationDate && modDate < creationDate;
 
     return {
       passed: !inconsistent,
-      creationDate: creationDate.toDateString() || 'Unknown',
-      modificationDate: modDate.toDateString() || 'Unknown',
-      producer: info.info || 'Unknown',
+      creationDate: creationDate.toISOString() || 'Unknown',
+      modificationDate: modDate.toISOString() || 'Unknown',
+      producer: info.info.Producer || 'Unknown',
       inconsistent,
       message: inconsistent
         ? 'Modification date before creation date (suspicious)'
