@@ -1,5 +1,7 @@
 const geminiService = require('../services/geminiService');
 const documentService = require('../services/documentService');
+// Import schemas from JSON file
+const schemas = require('../config/schemas.json'); 
 const { sendSuccess, sendError, sendNotFound, sendBadRequest } = require('../utils/response');
 const asyncHandler = require('../middleware/asyncHandler');
 const logger = require('../utils/logger');
@@ -71,13 +73,17 @@ const extractOCR = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Extract structured data from a document
+ * @desc    Extract structured data from a document based on document type
  * @route   POST /api/v1/ocr/structured/:id
  * @access  Public
  */
 const extractStructured = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { schema } = req.body;
+  const { documentType } = req.body; // Expecting documentType in ALL_CAPS_UNDERSCORE format
+
+  if (!documentType) {
+    return sendBadRequest(res, 'documentType is required in the request body');
+  }
 
   const document = documentService.getDocumentById(id);
   
@@ -85,26 +91,76 @@ const extractStructured = asyncHandler(async (req, res) => {
     return sendNotFound(res, 'Document not found');
   }
 
-  try {
-    logger.info(`Starting structured data extraction for document ID: ${id}`);
+  // Retrieve the schema based on the documentType from the JSON file
+  // The keys in schemas.json are now in ALL_CAPS_UNDERSCORE format
+  const schemaConfig = schemas[documentType];
 
+  if (!schemaConfig) {
+    // Fallback to generic extraction if schema not found, or return an error
+    logger.warn(`Schema for document type "${documentType}" not found. Falling back to generic extraction.`);
+    // Option 1: Return an error
+    // return sendNotFound(res, `Schema for document type "${documentType}" not found.`);
+    
+    // Option 2: Fallback to generic OCR extraction (if you want this behavior)
+    try {
+        logger.info(`Falling back to generic OCR extraction for document ID: ${id}`);
+        const ocrResult = await geminiService.extractTextFromDocument(
+            document.path,
+            document.mimetype
+        );
+        return sendSuccess(res, {
+            documentId: document.id,
+            // Use the provided documentType, which might be unknown if schema not found
+            documentType: documentType, 
+            extractedData: ocrResult.data.extractedData || ocrResult.data, // Use detected data or raw data
+            confidence: ocrResult.data.confidence || 'low',
+            model: ocrResult.model,
+            message: `Schema for "${documentType}" not found. Generic OCR data returned.`,
+        }, 'Generic OCR extraction completed');
+    } catch (fallbackError) {
+        logger.error(`Fallback generic OCR extraction failed for document ID: ${id}`, fallbackError.message);
+        return sendError(res, `Could not extract structured data for "${documentType}" and fallback failed: ${fallbackError.message}`, 500);
+    }
+  }
+
+  try {
+    logger.info(`Starting structured data extraction for document ID: ${id} of type: ${documentType}`);
+
+    // Pass the schema definition to the service
     const result = await geminiService.extractStructuredData(
       document.path,
       document.mimetype,
-      schema
+      schemaConfig.schema // Pass the actual schema object
     );
 
     logger.info(`Structured extraction completed for document ID: ${id}`);
 
     sendSuccess(res, {
       documentId: document.id,
-      data: result.data,
+      documentType: documentType, // Use the provided documentType
+      extractedData: result.data, // Renamed from 'data' to 'extractedData' for clarity
       model: result.model,
     }, 'Structured data extraction completed');
 
   } catch (error) {
     logger.error(`Structured extraction failed for document ID: ${id}`, error.message);
     return sendError(res, error.message, 500);
+  }
+});
+
+/**
+ * @desc    Get a list of available document types and their schemas
+ * @route   GET /api/v1/ocr/documentTypes
+ * @access  Public
+ */
+const getDocumentTypes = asyncHandler(async (req, res) => {
+  try {
+    // Object.keys will return the keys as they are in the JSON file (ALL_CAPS_UNDERSCORE)
+    const documentTypes = Object.keys(schemas); 
+    sendSuccess(res, { documentTypes }, 'Available document types retrieved successfully');
+  } catch (error) {
+    logger.error('Failed to retrieve document types:', error.message);
+    sendError(res, 'Failed to retrieve document types', 500);
   }
 });
 
@@ -172,5 +228,6 @@ const batchExtractOCR = asyncHandler(async (req, res) => {
 module.exports = {
   extractOCR,
   extractStructured,
+  getDocumentTypes, // Export the new function
   batchExtractOCR,
 };

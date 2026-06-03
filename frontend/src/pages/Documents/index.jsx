@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import FileUpload from '@components/common/FileUpload';
 import Button from '@components/common/Button';
 import { getAllDocuments, deleteDocument } from '@services/documentService';
-import { extractOCR } from '@services/ocrService';
+import { extractOCR, extractStructuredData, getDocumentTypes } from '@services/ocrService';
 import { checkTampering } from '@services/tamperingService';
-import { validateOCRData, validateDataLocally } from '@services/validateService';
+import { validateDocument, validateDocuments } from '@services/validateService';
 import { getUserInfo, clearUserInfo } from '@services/userFormService';
 import styles from './Documents.module.css';
 
@@ -15,26 +15,42 @@ const DocumentsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
+  
+  // OCR states
   const [ocrLoading, setOcrLoading] = useState({});
   const [ocrResults, setOcrResults] = useState({});
+
+  // Tampering check states
   const [tamperingLoading, setTamperingLoading] = useState({});
   const [tamperingResults, setTamperingResults] = useState({});
   const [userInfo, setUserInfo] = useState(null);
   const [validateLoading, setValidateLoading] = useState({});
   const [validationResults, setValidationResults] = useState({});
+  const [selectedDocForValidation, setSelectedDocForValidation] = useState(null);
+  const [validationError, setValidationError] = useState(null);
+  const [crossValidationLoading, setCrossValidationLoading] = useState(false);
+  const [crossValidationError, setCrossValidationError] = useState(null);
+  const [crossValidationSuccess, setCrossValidationSuccess] = useState(false);
 
-  const fetchDocuments = async () => {
+  // State for document types fetched from backend
+  const [allAvailableDocumentTypes, setAllAvailableDocumentTypes] = useState([]);
+  // State for the document type selected specifically for upload
+  const [selectedTypeForUpload, setSelectedTypeForUpload] = useState('');
+
+  // Fetch all documents
+  const fetchDocuments = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       const response = await getAllDocuments();
+      // Ensure the response data includes documentType if it was stored during upload
       setDocuments(response.data || []);
     } catch (err) {
       setError(err.message || 'Failed to fetch documents');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     // Check if user info exists, if not redirect to form
@@ -45,12 +61,30 @@ const DocumentsPage = () => {
     }
     setUserInfo(info);
     fetchDocuments();
-  }, [navigate]);
+  }, [fetchDocuments]);
+
+  // Fetch available document types when component mounts
+  useEffect(() => {
+    const fetchTypes = async () => {
+      try {
+        const response = await getDocumentTypes();
+        setAllAvailableDocumentTypes(response.data.documentTypes || []); 
+      } catch (err) {
+        console.error("Error fetching document types:", err);
+        setError("Failed to load document types. Please check the backend service.");
+      }
+    };
+    fetchTypes();
+  }, []);
+
+  // --- Handlers ---
 
   const handleUploadSuccess = (document) => {
+    // Assuming the backend returns the newly created document object, including its assigned type.
+    // The document object should ideally have a 'documentType' field now.
     setSuccessMessage(`Document "${document.originalName}" uploaded successfully!`);
     setTimeout(() => setSuccessMessage(null), 5000);
-    fetchDocuments(); // Refresh list
+    fetchDocuments(); // Refresh list to show the new document with its type
   };
 
   const handleUploadError = (errorMsg) => {
@@ -76,24 +110,38 @@ const DocumentsPage = () => {
     setOcrLoading((prev) => ({ ...prev, [docId]: true }));
     setError(null);
 
+    // Find the document to get its stored documentType
+    const document = documents.find(doc => doc.id === docId);
+
+    if (!document) {
+      setError('Document not found');
+      setOcrLoading((prev) => ({ ...prev, [docId]: false }));
+      return;
+    }
+
+    // Check if document has a documentType stored
+    if (!document.documentType) {
+      setError('Document type not specified. Please re-upload the document with a document type.');
+      setTimeout(() => setError(null), 5000);
+      setOcrLoading((prev) => ({ ...prev, [docId]: false }));
+      return;
+    }
+
     try {
-      const response = await extractOCR(docId);
+      // Use structured extraction with the document's stored type
+      const response = await extractStructuredData(docId, document.documentType);
 
       setOcrResults((prev) => ({
         ...prev,
         [docId]: {
           documentType: response.data.documentType,
-          extractedData: response.data.extractedData,
-          confidence: response.data.confidence,
-          cached: response.data.cached,
+          extractedData: response.data.extractedData || {},
           model: response.data.model,
         },
       }));
 
       setSuccessMessage(
-        `OCR extraction completed for "${docName}"${
-          response.data.cached ? ' (cached)' : ''
-        }`
+        `OCR extraction completed for "${docName}" as ${document.documentType}`
       );
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err) {
@@ -103,6 +151,7 @@ const DocumentsPage = () => {
       setOcrLoading((prev) => ({ ...prev, [docId]: false }));
     }
   };
+
 
   const handleCheckTampering = async (docId, docName) => {
     setTamperingLoading((prev) => ({ ...prev, [docId]: true }));
@@ -137,28 +186,37 @@ const DocumentsPage = () => {
     }
   };
 
+  // Handler for when a document type is selected for upload
+  const handleDocumentTypeForUploadChange = (type) => {
+    setSelectedTypeForUpload(type);
+  };
+
   const handleValidateOCR = async (docId, docName) => {
+    const doc = documents.find(d => d.id === docId);
+
+    // Return validation errors to be displayed inline, not at top
     if (!ocrResults[docId]) {
-      setError('Please extract OCR data first');
-      setTimeout(() => setError(null), 5000);
-      return;
+      return { error: 'Please extract OCR data first before validating' };
     }
 
     if (!userInfo) {
-      setError('User information not available');
-      setTimeout(() => setError(null), 5000);
-      return;
+      return { error: 'User information not available. Please fill the user form first.' };
+    }
+
+    if (!doc || !doc.documentType) {
+      return { error: 'Document type not found. Please re-upload with a document type selected.' };
     }
 
     setValidateLoading((prev) => ({ ...prev, [docId]: true }));
-    setError(null);
+    setSelectedDocForValidation(docId); // Set this document as selected
 
     try {
-      // Call backend validation
-      const response = await validateOCRData(
+      // Call backend validation with document type
+      const response = await validateDocument(
         docId,
-        userInfo,
-        ocrResults[docId]
+        doc.documentType,
+        ocrResults[docId].extractedData,
+        userInfo
       );
 
       setValidationResults((prev) => ({
@@ -167,12 +225,13 @@ const DocumentsPage = () => {
       }));
 
       setSuccessMessage(
-        `Validation completed for "${docName}"`
+        `✓ Validation completed for "${docName}"`
       );
       setTimeout(() => setSuccessMessage(null), 5000);
+
+      return { success: true };
     } catch (err) {
-      setError(err.message || 'Validation failed');
-      setTimeout(() => setError(null), 5000);
+      return { error: err.message || 'Validation failed. Please try again.' };
     } finally {
       setValidateLoading((prev) => ({ ...prev, [docId]: false }));
     }
@@ -183,42 +242,92 @@ const DocumentsPage = () => {
     navigate('/user-form');
   };
 
+  const handleCrossValidateAll = async () => {
+    setCrossValidationError(null);
+    setCrossValidationSuccess(false);
+
+    if (!userInfo) {
+      setCrossValidationError('User information not available. Please fill the user form first.');
+      return;
+    }
+
+    const documentsWithOCR = documents.filter(doc => ocrResults[doc.id] && doc.documentType);
+
+    if (documentsWithOCR.length < 2) {
+      setCrossValidationError('Please extract OCR data from at least 2 documents before cross-validation.');
+      return;
+    }
+
+    setCrossValidationLoading(true);
+
+    try {
+      // Prepare data for cross-validation - backend expects array format
+      const documentsArray = documentsWithOCR.map(doc => ({
+        documentId: doc.id,
+        documentType: doc.documentType,
+        extractedData: ocrResults[doc.id].extractedData,
+      }));
+
+      const response = await validateDocuments(documentsArray, userInfo);
+
+      // Store cross-validation results
+      setValidationResults(prev => ({
+        ...prev,
+        __crossValidation__: response.data,
+      }));
+
+      setCrossValidationSuccess(true);
+      // Auto-hide success message after 5 seconds
+      setTimeout(() => setCrossValidationSuccess(false), 5000);
+    } catch (err) {
+      setCrossValidationError(err.message || 'Cross-validation failed. Please try again.');
+    } finally {
+      setCrossValidationLoading(false);
+    }
+  };
+
   return (
     <div className={styles.page}>
-      <h1 className={styles.title}>Document Upload</h1>
-      <p className={styles.subtitle}>
-        Upload images (JPEG, PNG, GIF, WEBP) or PDF documents.
-      </p>
+      <div className={styles.pageHeaderSection}>
+        <div className={styles.pageHeaderContent}>
+          <div className={styles.pageHeaderIcon}>📋</div>
+          <div>
+            <h1 className={styles.pageTitle}>Document Validation Center</h1>
+            <p className={styles.pageSubtitle}>
+              Upload, extract, and validate your documents seamlessly
+            </p>
+          </div>
+        </div>
+      </div>
 
       {userInfo && (
-        <div className={styles.userInfoCard}>
-          <div className={styles.userInfoHeader}>
-            <div>
-              <h3 className={styles.userInfoTitle}>User Information</h3>
-              <p className={styles.userInfoName}>{userInfo.username}</p>
+        <div className={styles.userBanner}>
+          <div className={styles.bannerLeft}>
+            <div className={styles.userAvatar}>
+              <span className={styles.avatarIcon}>👤</span>
             </div>
-            <button
-              onClick={handleEditUserInfo}
-              className={styles.editBtn}
-              title="Edit user information"
-            >
-              ✏️ Edit
-            </button>
-          </div>
-          <div className={styles.userInfoDetails}>
-            <div className={styles.userInfoItem}>
-              <span className={styles.label}>Mobile:</span>
-              <span>{userInfo.mobile}</span>
-            </div>
-            <div className={styles.userInfoItem}>
-              <span className={styles.label}>DOB:</span>
-              <span>{new Date(userInfo.dob).toLocaleDateString()}</span>
-            </div>
-            <div className={styles.userInfoItem}>
-              <span className={styles.label}>Address:</span>
-              <span>{userInfo.address}</span>
+            <div className={styles.userDetails}>
+              <div className={styles.userName}>{userInfo.username}</div>
+              <div className={styles.userMeta}>
+                <span className={styles.metaItem}>
+                  <span className={styles.metaIcon}>📱</span>
+                  {userInfo.mobile}
+                </span>
+                <span className={styles.metaItem}>
+                  <span className={styles.metaIcon}>📅</span>
+                  {new Date(userInfo.dob).toLocaleDateString()}
+                </span>
+                <span className={styles.metaItem}>
+                  <span className={styles.metaIcon}>📍</span>
+                  {userInfo.address}
+                </span>
+              </div>
             </div>
           </div>
+          <button onClick={handleEditUserInfo} className={styles.editUserBtn}>
+            <span className={styles.editIcon}>✏️</span>
+            Edit Info
+          </button>
         </div>
       )}
 
@@ -234,26 +343,116 @@ const DocumentsPage = () => {
         </div>
       )}
 
+      {/* --- Upload Section with Document Type Selector --- */}
       <div className={styles.uploadSection}>
+        {/* Document Type Selector for Upload */}
+        <div className={styles.uploadTypeSelector}>
+          <label htmlFor="uploadDocumentType" className={styles.uploadLabel}>
+            Select Type for Upload:
+          </label>
+          <select
+            id="uploadDocumentType"
+            value={selectedTypeForUpload}
+            onChange={(e) => handleDocumentTypeForUploadChange(e.target.value)}
+            // Disable if loading docs or if no types are available yet
+            disabled={loading || allAvailableDocumentTypes.length === 0} 
+            className={styles.uploadSelect}
+          >
+            {allAvailableDocumentTypes.length === 0 ? (
+              <option value="">Loading types...</option>
+            ) : (
+              <>
+                <option value="">-- Select Type --</option>
+                {allAvailableDocumentTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type} {/* Display as ALL_CAPS_UNDERSCORE */}
+                  </option>
+                ))}
+              </>
+            )}
+          </select>
+        </div>
+
+        {/* File Upload Component */}
         <FileUpload
           onUploadSuccess={handleUploadSuccess}
           onUploadError={handleUploadError}
+          selectedDocumentType={selectedTypeForUpload} // Pass the selected document type
         />
       </div>
 
-      <div className={styles.documentsSection}>
-        <h2 className={styles.sectionTitle}>Uploaded Documents</h2>
-        
+      {/* --- Uploaded Documents Section --- */}
+      <div className={styles.documentsMainSection}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <h2 className={styles.sectionTitle}>Uploaded Documents</h2>
+            <p className={styles.sectionSubtitle}>
+              {documents.length} document{documents.length !== 1 ? 's' : ''} uploaded
+            </p>
+          </div>
+
+          {documents.length > 1 && (
+            <div className={styles.crossValidateContainer}>
+              <button
+                onClick={handleCrossValidateAll}
+                disabled={Object.keys(ocrResults).length < 2 || crossValidationLoading}
+                className={styles.crossValidateBtn}
+              >
+                {crossValidationLoading ? (
+                  <>
+                    <span className={styles.crossSpinner}>⏳</span>
+                    Validating...
+                  </>
+                ) : (
+                  <>
+                    <span className={styles.crossIcon}>🔄</span>
+                    Cross-Validate All Documents
+                  </>
+                )}
+              </button>
+
+              {crossValidationSuccess && (
+                <div className={styles.crossValidationSuccessBox}>
+                  <span className={styles.successIcon}>✓</span>
+                  <div>
+                    <p className={styles.successTitle}>Cross-Validation Complete!</p>
+                    <p className={styles.successText}>
+                      All documents have been validated. Check results below.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {crossValidationError && (
+                <div className={styles.crossValidationErrorBox}>
+                  <span className={styles.errorIcon}>⚠️</span>
+                  <div>
+                    <p className={styles.errorTitle}>Cannot Cross-Validate</p>
+                    <p className={styles.errorText}>{crossValidationError}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {loading ? (
           <p className={styles.loading}>Loading documents...</p>
         ) : documents.length === 0 ? (
-          <p className={styles.empty}>No documents uploaded yet.</p>
+          <div className={styles.emptyDocuments}>
+            <div className={styles.emptyIcon}>📂</div>
+            <p className={styles.emptyTitle}>No Documents Yet</p>
+            <p className={styles.emptyText}>Upload your first document to get started</p>
+          </div>
         ) : (
           <div className={styles.grid}>
             {documents.map((doc) => (
               <div key={doc.id} className={styles.card}>
                 <div className={styles.cardHeader}>
-                  <span className={styles.badge}>{doc.category}</span>
+                  {/* Display the document type here, if available */}
+                  {doc.documentType && ( 
+                    <span className={styles.docTypeBadgeUploaded}>{doc.documentType}</span>
+                  )}
                   <button
                     onClick={() => handleDelete(doc.id, doc.originalName)}
                     className={styles.deleteBtn}
@@ -283,6 +482,8 @@ const DocumentsPage = () => {
                   >
                     View Document →
                   </a>
+
+                  {/* OCR Extraction Button - uses documentType from upload */}
                   <button
                     onClick={() => handleExtractOCR(doc.id, doc.originalName)}
                     disabled={ocrLoading[doc.id]}
@@ -290,15 +491,7 @@ const DocumentsPage = () => {
                   >
                     {ocrLoading[doc.id] ? '🔄 Extracting...' : '🔍 Extract OCR'}
                   </button>
-                  {ocrResults[doc.id] && (
-                    <button
-                      onClick={() => handleValidateOCR(doc.id, doc.originalName)}
-                      disabled={validateLoading[doc.id]}
-                      className={styles.validateBtn}
-                    >
-                      {validateLoading[doc.id] ? '🔄 Validating...' : '✓ Validate Data'}
-                    </button>
-                  )}
+
                   {doc.mimetype === 'application/pdf' && (
                     <button
                       onClick={() => handleCheckTampering(doc.id, doc.originalName)}
@@ -310,6 +503,7 @@ const DocumentsPage = () => {
                   )}
                 </div>
 
+                {/* Display OCR Results */}
                 {ocrResults[doc.id] && (
                   <div className={styles.ocrResult}>
                     <div className={styles.ocrHeader}>
@@ -317,14 +511,6 @@ const DocumentsPage = () => {
                         <strong>📄 Extracted Data</strong>
                         <span className={styles.docTypeBadge}>
                           {ocrResults[doc.id].documentType}
-                        </span>
-                      </div>
-                      <div className={styles.headerBadges}>
-                        {ocrResults[doc.id].cached && (
-                          <span className={styles.cachedBadge}>Cached</span>
-                        )}
-                        <span className={`${styles.confidenceBadge} ${styles[ocrResults[doc.id].confidence]}`}>
-                          {ocrResults[doc.id].confidence}
                         </span>
                       </div>
                     </div>
@@ -349,38 +535,70 @@ const DocumentsPage = () => {
                     <div className={styles.ocrMeta}>
                       Model: {ocrResults[doc.id].model}
                     </div>
+
+                    {/* Validate Button - After OCR Results */}
+                    <div className={styles.validateSection}>
+                      <button
+                        onClick={async () => {
+                          const result = await handleValidateOCR(doc.id, doc.originalName);
+                          // Error handling is done inside the function
+                        }}
+                        disabled={validateLoading[doc.id]}
+                        className={styles.validateDocBtn}
+                      >
+                        {validateLoading[doc.id] ? (
+                          <>
+                            <span className={styles.btnSpinner}>⏳</span>
+                            Validating...
+                          </>
+                        ) : (
+                          <>
+                            <span className={styles.btnIcon}>✓</span>
+                            Validate Against User Info
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 )}
 
-                {/* Validation Results */}
+                {/* Validation Results for this document */}
                 {validationResults[doc.id] && (
-                  <div className={`${styles.validationResult} ${styles[validationResults[doc.id].isValid ? 'valid' : 'invalid']}`}>
-                    <div className={styles.validationHeader}>
-                      <div className={styles.headerTitle}>
-                        <span className={styles.validationIcon}>
-                          {validationResults[doc.id].isValid ? '✅' : '⚠️'}
-                        </span>
-                        <strong>Data Validation</strong>
-                      </div>
-                      <span className={styles.confidenceBadge}>
-                        {validationResults[doc.id].overallConfidence}% Match
+                  <div className={styles.validationResultCard}>
+                    <div className={styles.validationCardHeader}>
+                      <span className={`${styles.validationStatusBadge} ${validationResults[doc.id].status === 'VALID' ? styles.statusValid : styles.statusInvalid}`}>
+                        {validationResults[doc.id].status === 'VALID' ? '✓ Valid' : '⚠ Needs Review'}
+                      </span>
+                      <span className={styles.confidenceScore}>
+                        {validationResults[doc.id].summary?.averageConfidence || 0}% Confidence
                       </span>
                     </div>
-                    <div className={styles.validationData}>
-                      {Object.entries(validationResults[doc.id].matches).map(([field, matched]) => (
-                        <div key={field} className={`${styles.validationItem} ${matched ? styles.match : styles.nomatch}`}>
-                          <span className={styles.fieldName}>{field}:</span>
-                          <span className={styles.fieldStatus}>
-                            {matched ? '✓ Matched' : '✗ Not Matched'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className={styles.validationStatus}>
-                      {validationResults[doc.id].isValid ?
-                        'Data validation successful - All critical fields matched' :
-                        'Data validation incomplete - Some fields did not match'
+
+                    <div className={styles.fieldsValidation}>
+                      {validationResults[doc.id].fieldResults &&
+                        Object.entries(validationResults[doc.id].fieldResults).map(([fieldKey, field]) => (
+                          <div key={fieldKey} className={`${styles.fieldValidationRow} ${field.matched ? styles.matched : styles.notMatched}`}>
+                            <div className={styles.fieldInfo}>
+                              <span className={styles.checkIcon}>
+                                {field.matched ? '✓' : '✗'}
+                              </span>
+                              <div className={styles.fieldData}>
+                                <div className={styles.fieldLabel}>{field.label}</div>
+                                <div className={styles.fieldValue}>{field.ocrValue || 'N/A'}</div>
+                              </div>
+                            </div>
+                            <div className={styles.confidenceBadge}>
+                              {field.confidence}%
+                            </div>
+                          </div>
+                        ))
                       }
+                    </div>
+
+                    <div className={styles.validationSummary}>
+                      <span className={styles.summaryText}>
+                        {validationResults[doc.id].summary?.matchedFields || 0} of {validationResults[doc.id].summary?.totalFields || 0} fields matched
+                      </span>
                     </div>
                   </div>
                 )}
@@ -414,6 +632,59 @@ const DocumentsPage = () => {
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+
+        {/* Cross-Validation Results Section */}
+        {validationResults.__crossValidation__ && (
+          <div className={styles.crossValidationSection}>
+            <div className={styles.crossValidationHeader}>
+              <h3 className={styles.crossValidationTitle}>
+                <span className={styles.crossIcon}>🔄</span>
+                Cross-Document Validation Results
+              </h3>
+            </div>
+
+            {validationResults.__crossValidation__.crossDocumentIssues &&
+             validationResults.__crossValidation__.crossDocumentIssues.length > 0 ? (
+              <div className={styles.crossValidationIssues}>
+                {validationResults.__crossValidation__.crossDocumentIssues.map((issue, idx) => (
+                  <div key={idx} className={`${styles.issueCard} ${styles[`severity${issue.severity}`]}`}>
+                    <div className={styles.issueHeader}>
+                      <span className={styles.issueIcon}>⚠️</span>
+                      <div className={styles.issueInfo}>
+                        <div className={styles.issueField}>{issue.field}</div>
+                        <div className={styles.issueSeverity}>{issue.severity} Priority</div>
+                      </div>
+                    </div>
+                    <div className={styles.issueMessage}>{issue.message}</div>
+                    {issue.details && (
+                      <div className={styles.issueDetails}>
+                        {Object.entries(issue.details).map(([value, docIds]) => (
+                          <div key={value} className={styles.detailRow}>
+                            <span className={styles.detailValue}>"{value}"</span>
+                            <span className={styles.detailDocs}>
+                              found in: {Array.isArray(docIds) ? docIds.join(', ') : docIds}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className={styles.crossValidationSuccess}>
+                <span className={styles.successIcon}>✓</span>
+                <div>
+                  <div className={styles.successTitle}>All Documents Consistent</div>
+                  <div className={styles.successText}>
+                    No inconsistencies found across {Object.keys(validationResults.__crossValidation__.validations || {}).length} documents
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -119,13 +119,13 @@ Return ONLY valid JSON, no markdown formatting, no explanations.`;
  * Extract structured data from a document
  * @param {string} filePath - Path to the file
  * @param {string} mimeType - MIME type of the file
- * @param {string} schema - Description of expected data structure
+ * @param {Object} schema - Schema object with field definitions
  * @returns {Promise<Object>} - Structured data extracted
  */
 const extractStructuredData = async (filePath, mimeType, schema) => {
   try {
     logger.info(`Starting structured data extraction for: ${filePath}`);
-    
+
     const model = initGemini();
 
     const fileBuffer = fs.readFileSync(filePath);
@@ -138,20 +138,61 @@ const extractStructuredData = async (filePath, mimeType, schema) => {
       },
     };
 
-    const prompt = `Extract structured data from this document.
-    ${schema ? `Expected structure: ${schema}` : ''}
-    Return the data in JSON format.
-    If the document doesn't contain the expected data, return an empty object.`;
+    // Create a detailed prompt with the schema
+    const schemaDescription = schema ? JSON.stringify(schema, null, 2) : '{}';
+
+    const prompt = `Extract data from this document according to the following schema.
+
+SCHEMA:
+${schemaDescription}
+
+INSTRUCTIONS:
+1. Extract ONLY the fields specified in the schema
+2. Return a valid JSON object (not an array, not markdown)
+3. Use the exact field names from the schema as keys
+4. If a field is not found in the document, omit it or set it to null
+5. Return ONLY valid JSON, no markdown code blocks, no explanations
+
+Example output format:
+{
+  "name": "John Doe",
+  "dateOfBirth": "1990-01-01",
+  "aadhaarNumber": "1234 5678 9012"
+}
+
+Return ONLY the JSON object, nothing else.`;
 
     const result = await model.generateContent([prompt, imagePart]);
     const response = await result.response;
-    const extractedData = response.text();
+    let extractedText = response.text();
+
+    logger.debug('Raw Gemini response:', extractedText);
+
+    // Clean up markdown code blocks if present
+    extractedText = extractedText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+    // Parse JSON
+    let parsedData;
+    try {
+      parsedData = JSON.parse(extractedText);
+
+      // If it's an array with one object, extract the object
+      if (Array.isArray(parsedData) && parsedData.length === 1) {
+        parsedData = parsedData[0];
+      }
+    } catch (parseError) {
+      logger.warn('Failed to parse JSON from Gemini response, returning raw text');
+      parsedData = {
+        rawText: extractedText,
+        parseError: parseError.message,
+      };
+    }
 
     logger.info('Structured data extraction completed');
-    
+
     return {
       success: true,
-      data: extractedData,
+      data: parsedData,
       model: config.gemini.model,
     };
   } catch (error) {

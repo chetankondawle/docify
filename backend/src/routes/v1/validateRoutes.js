@@ -1,16 +1,26 @@
 const express = require('express');
-const { validateOCRData } = require('../../controllers/validateController');
+const { validateDocument, validateDocuments } = require('../../controllers/validateController');
 
 const router = express.Router();
 
 /**
- * Validate extracted OCR data against user provided information
- * @route   POST /api/v1/validate
- * @body    {number} documentId - Document ID
+ * Validate single document OCR data against user information
+ * @route   POST /api/v1/validate/document
+ * @body    {string} documentId - Document ID
+ * @body    {string} documentType - Document type (AADHAAR, PAN, PASSPORT, SALARY_SLIP)
+ * @body    {Object} extractedData - Extracted OCR data
  * @body    {Object} userData - User provided information
- * @body    {Object} ocrData - Extracted OCR data
  * @access  Public
  */
-router.post('/', validateOCRData);
+router.post('/document', validateDocument);
+
+/**
+ * Validate multiple documents for data consistency
+ * @route   POST /api/v1/validate/documents
+ * @body    {Array} documents - Array of {documentId, documentType, extractedData}
+ * @body    {Object} userData - User provided information
+ * @access  Public
+ */
+router.post('/documents', validateDocuments);
 
 module.exports = router;

@@ -13,7 +13,10 @@ const uploadDocument = asyncHandler(async (req, res) => {
     return sendBadRequest(res, 'No file uploaded');
   }
 
-  const document = documentService.saveDocument(req.file, req.user);
+  // Get documentType from request body (sent from frontend)
+  const { documentType } = req.body;
+
+  const document = documentService.saveDocument(req.file, req.user, documentType);
 
   sendCreated(res, document, 'Document uploaded successfully');
 });
