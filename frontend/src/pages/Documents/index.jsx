@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import FileUpload from '@components/common/FileUpload';
+import Button from '@components/common/Button';
 import { getAllDocuments, deleteDocument } from '@services/documentService';
 import { extractOCR } from '@services/ocrService';
 import { checkTampering } from '@services/tamperingService';
+import { validateOCRData, validateDataLocally } from '@services/validateService';
+import { getUserInfo, clearUserInfo } from '@services/userFormService';
 import styles from './Documents.module.css';
 
 const DocumentsPage = () => {
+  const navigate = useNavigate();
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -14,6 +19,9 @@ const DocumentsPage = () => {
   const [ocrResults, setOcrResults] = useState({});
   const [tamperingLoading, setTamperingLoading] = useState({});
   const [tamperingResults, setTamperingResults] = useState({});
+  const [userInfo, setUserInfo] = useState(null);
+  const [validateLoading, setValidateLoading] = useState({});
+  const [validationResults, setValidationResults] = useState({});
 
   const fetchDocuments = async () => {
     try {
@@ -29,8 +37,15 @@ const DocumentsPage = () => {
   };
 
   useEffect(() => {
+    // Check if user info exists, if not redirect to form
+    const info = getUserInfo();
+    if (!info) {
+      navigate('/user-form');
+      return;
+    }
+    setUserInfo(info);
     fetchDocuments();
-  }, []);
+  }, [navigate]);
 
   const handleUploadSuccess = (document) => {
     setSuccessMessage(`Document "${document.originalName}" uploaded successfully!`);
@@ -122,12 +137,90 @@ const DocumentsPage = () => {
     }
   };
 
+  const handleValidateOCR = async (docId, docName) => {
+    if (!ocrResults[docId]) {
+      setError('Please extract OCR data first');
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
+
+    if (!userInfo) {
+      setError('User information not available');
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
+
+    setValidateLoading((prev) => ({ ...prev, [docId]: true }));
+    setError(null);
+
+    try {
+      // Call backend validation
+      const response = await validateOCRData(
+        docId,
+        userInfo,
+        ocrResults[docId]
+      );
+
+      setValidationResults((prev) => ({
+        ...prev,
+        [docId]: response.data,
+      }));
+
+      setSuccessMessage(
+        `Validation completed for "${docName}"`
+      );
+      setTimeout(() => setSuccessMessage(null), 5000);
+    } catch (err) {
+      setError(err.message || 'Validation failed');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setValidateLoading((prev) => ({ ...prev, [docId]: false }));
+    }
+  };
+
+  const handleEditUserInfo = () => {
+    clearUserInfo();
+    navigate('/user-form');
+  };
+
   return (
     <div className={styles.page}>
       <h1 className={styles.title}>Document Upload</h1>
       <p className={styles.subtitle}>
         Upload images (JPEG, PNG, GIF, WEBP) or PDF documents.
       </p>
+
+      {userInfo && (
+        <div className={styles.userInfoCard}>
+          <div className={styles.userInfoHeader}>
+            <div>
+              <h3 className={styles.userInfoTitle}>User Information</h3>
+              <p className={styles.userInfoName}>{userInfo.username}</p>
+            </div>
+            <button
+              onClick={handleEditUserInfo}
+              className={styles.editBtn}
+              title="Edit user information"
+            >
+              ✏️ Edit
+            </button>
+          </div>
+          <div className={styles.userInfoDetails}>
+            <div className={styles.userInfoItem}>
+              <span className={styles.label}>Mobile:</span>
+              <span>{userInfo.mobile}</span>
+            </div>
+            <div className={styles.userInfoItem}>
+              <span className={styles.label}>DOB:</span>
+              <span>{new Date(userInfo.dob).toLocaleDateString()}</span>
+            </div>
+            <div className={styles.userInfoItem}>
+              <span className={styles.label}>Address:</span>
+              <span>{userInfo.address}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {successMessage && (
         <div className={styles.alert} data-type="success">
@@ -197,6 +290,15 @@ const DocumentsPage = () => {
                   >
                     {ocrLoading[doc.id] ? '🔄 Extracting...' : '🔍 Extract OCR'}
                   </button>
+                  {ocrResults[doc.id] && (
+                    <button
+                      onClick={() => handleValidateOCR(doc.id, doc.originalName)}
+                      disabled={validateLoading[doc.id]}
+                      className={styles.validateBtn}
+                    >
+                      {validateLoading[doc.id] ? '🔄 Validating...' : '✓ Validate Data'}
+                    </button>
+                  )}
                   {doc.mimetype === 'application/pdf' && (
                     <button
                       onClick={() => handleCheckTampering(doc.id, doc.originalName)}
@@ -246,6 +348,39 @@ const DocumentsPage = () => {
                     </div>
                     <div className={styles.ocrMeta}>
                       Model: {ocrResults[doc.id].model}
+                    </div>
+                  </div>
+                )}
+
+                {/* Validation Results */}
+                {validationResults[doc.id] && (
+                  <div className={`${styles.validationResult} ${styles[validationResults[doc.id].isValid ? 'valid' : 'invalid']}`}>
+                    <div className={styles.validationHeader}>
+                      <div className={styles.headerTitle}>
+                        <span className={styles.validationIcon}>
+                          {validationResults[doc.id].isValid ? '✅' : '⚠️'}
+                        </span>
+                        <strong>Data Validation</strong>
+                      </div>
+                      <span className={styles.confidenceBadge}>
+                        {validationResults[doc.id].overallConfidence}% Match
+                      </span>
+                    </div>
+                    <div className={styles.validationData}>
+                      {Object.entries(validationResults[doc.id].matches).map(([field, matched]) => (
+                        <div key={field} className={`${styles.validationItem} ${matched ? styles.match : styles.nomatch}`}>
+                          <span className={styles.fieldName}>{field}:</span>
+                          <span className={styles.fieldStatus}>
+                            {matched ? '✓ Matched' : '✗ Not Matched'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className={styles.validationStatus}>
+                      {validationResults[doc.id].isValid ?
+                        'Data validation successful - All critical fields matched' :
+                        'Data validation incomplete - Some fields did not match'
+                      }
                     </div>
                   </div>
                 )}
