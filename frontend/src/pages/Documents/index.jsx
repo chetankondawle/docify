@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import FileUpload from '@components/common/FileUpload';
+import React, { useState, useEffect, useCallback } from 'react';
+import FileUpload from '@components/common/FileUpload'; // Assuming this component can be modified
 import { getAllDocuments, deleteDocument } from '@services/documentService';
-import { extractOCR } from '@services/ocrService';
+// Import new functions and update existing ones
+import { extractOCR, extractStructuredData, getDocumentTypes } from '@services/ocrService'; 
 import { checkTampering } from '@services/tamperingService';
 import styles from './Documents.module.css';
 
@@ -10,32 +11,61 @@ const DocumentsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
+  
+  // OCR states
   const [ocrLoading, setOcrLoading] = useState({});
   const [ocrResults, setOcrResults] = useState({});
+
+  // Tampering check states
   const [tamperingLoading, setTamperingLoading] = useState({});
   const [tamperingResults, setTamperingResults] = useState({});
 
-  const fetchDocuments = async () => {
+  // State for document types fetched from backend
+  const [allAvailableDocumentTypes, setAllAvailableDocumentTypes] = useState([]);
+  // State for the document type selected specifically for upload
+  const [selectedTypeForUpload, setSelectedTypeForUpload] = useState('');
+
+  // Fetch all documents
+  const fetchDocuments = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       const response = await getAllDocuments();
+      // Ensure the response data includes documentType if it was stored during upload
       setDocuments(response.data || []);
     } catch (err) {
       setError(err.message || 'Failed to fetch documents');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchDocuments();
+  }, [fetchDocuments]);
+
+  // Fetch available document types when component mounts
+  useEffect(() => {
+    const fetchTypes = async () => {
+      try {
+        const response = await getDocumentTypes();
+        setAllAvailableDocumentTypes(response.data.documentTypes || []); 
+      } catch (err) {
+        console.error("Error fetching document types:", err);
+        setError("Failed to load document types. Please check the backend service.");
+      }
+    };
+    fetchTypes();
   }, []);
 
+  // --- Handlers ---
+
   const handleUploadSuccess = (document) => {
+    // Assuming the backend returns the newly created document object, including its assigned type.
+    // The document object should ideally have a 'documentType' field now.
     setSuccessMessage(`Document "${document.originalName}" uploaded successfully!`);
     setTimeout(() => setSuccessMessage(null), 5000);
-    fetchDocuments(); // Refresh list
+    fetchDocuments(); // Refresh list to show the new document with its type
   };
 
   const handleUploadError = (errorMsg) => {
@@ -61,24 +91,38 @@ const DocumentsPage = () => {
     setOcrLoading((prev) => ({ ...prev, [docId]: true }));
     setError(null);
 
+    // Find the document to get its stored documentType
+    const document = documents.find(doc => doc.id === docId);
+
+    if (!document) {
+      setError('Document not found');
+      setOcrLoading((prev) => ({ ...prev, [docId]: false }));
+      return;
+    }
+
+    // Check if document has a documentType stored
+    if (!document.documentType) {
+      setError('Document type not specified. Please re-upload the document with a document type.');
+      setTimeout(() => setError(null), 5000);
+      setOcrLoading((prev) => ({ ...prev, [docId]: false }));
+      return;
+    }
+
     try {
-      const response = await extractOCR(docId);
+      // Use structured extraction with the document's stored type
+      const response = await extractStructuredData(docId, document.documentType);
 
       setOcrResults((prev) => ({
         ...prev,
         [docId]: {
           documentType: response.data.documentType,
-          extractedData: response.data.extractedData,
-          confidence: response.data.confidence,
-          cached: response.data.cached,
+          extractedData: response.data.extractedData || {},
           model: response.data.model,
         },
       }));
 
       setSuccessMessage(
-        `OCR extraction completed for "${docName}"${
-          response.data.cached ? ' (cached)' : ''
-        }`
+        `OCR extraction completed for "${docName}" as ${document.documentType}`
       );
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err) {
@@ -88,6 +132,7 @@ const DocumentsPage = () => {
       setOcrLoading((prev) => ({ ...prev, [docId]: false }));
     }
   };
+
 
   const handleCheckTampering = async (docId, docName) => {
     setTamperingLoading((prev) => ({ ...prev, [docId]: true }));
@@ -122,11 +167,16 @@ const DocumentsPage = () => {
     }
   };
 
+  // Handler for when a document type is selected for upload
+  const handleDocumentTypeForUploadChange = (type) => {
+    setSelectedTypeForUpload(type);
+  };
+
   return (
     <div className={styles.page}>
-      <h1 className={styles.title}>Document Upload</h1>
+      <h1 className={styles.title}>Document Management</h1>
       <p className={styles.subtitle}>
-        Upload images (JPEG, PNG, GIF, WEBP) or PDF documents.
+        Manage your uploaded documents, extract information, and check security.
       </p>
 
       {successMessage && (
@@ -141,13 +191,45 @@ const DocumentsPage = () => {
         </div>
       )}
 
+      {/* --- Upload Section with Document Type Selector --- */}
       <div className={styles.uploadSection}>
+        {/* Document Type Selector for Upload */}
+        <div className={styles.uploadTypeSelector}>
+          <label htmlFor="uploadDocumentType" className={styles.uploadLabel}>
+            Select Type for Upload:
+          </label>
+          <select
+            id="uploadDocumentType"
+            value={selectedTypeForUpload}
+            onChange={(e) => handleDocumentTypeForUploadChange(e.target.value)}
+            // Disable if loading docs or if no types are available yet
+            disabled={loading || allAvailableDocumentTypes.length === 0} 
+            className={styles.uploadSelect}
+          >
+            {allAvailableDocumentTypes.length === 0 ? (
+              <option value="">Loading types...</option>
+            ) : (
+              <>
+                <option value="">-- Select Type --</option>
+                {allAvailableDocumentTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type} {/* Display as ALL_CAPS_UNDERSCORE */}
+                  </option>
+                ))}
+              </>
+            )}
+          </select>
+        </div>
+
+        {/* File Upload Component */}
         <FileUpload
           onUploadSuccess={handleUploadSuccess}
           onUploadError={handleUploadError}
+          selectedDocumentType={selectedTypeForUpload} // Pass the selected document type
         />
       </div>
 
+      {/* --- Uploaded Documents Section --- */}
       <div className={styles.documentsSection}>
         <h2 className={styles.sectionTitle}>Uploaded Documents</h2>
         
@@ -160,7 +242,10 @@ const DocumentsPage = () => {
             {documents.map((doc) => (
               <div key={doc.id} className={styles.card}>
                 <div className={styles.cardHeader}>
-                  <span className={styles.badge}>{doc.category}</span>
+                  {/* Display the document type here, if available */}
+                  {doc.documentType && ( 
+                    <span className={styles.docTypeBadgeUploaded}>{doc.documentType}</span>
+                  )}
                   <button
                     onClick={() => handleDelete(doc.id, doc.originalName)}
                     className={styles.deleteBtn}
@@ -190,6 +275,8 @@ const DocumentsPage = () => {
                   >
                     View Document →
                   </a>
+                  
+                  {/* OCR Extraction Button - uses documentType from upload */}
                   <button
                     onClick={() => handleExtractOCR(doc.id, doc.originalName)}
                     disabled={ocrLoading[doc.id]}
@@ -197,6 +284,8 @@ const DocumentsPage = () => {
                   >
                     {ocrLoading[doc.id] ? '🔄 Extracting...' : '🔍 Extract OCR'}
                   </button>
+
+                  {/* PDF Tampering Check Button */}
                   {doc.mimetype === 'application/pdf' && (
                     <button
                       onClick={() => handleCheckTampering(doc.id, doc.originalName)}
@@ -208,6 +297,7 @@ const DocumentsPage = () => {
                   )}
                 </div>
 
+                {/* Display OCR Results */}
                 {ocrResults[doc.id] && (
                   <div className={styles.ocrResult}>
                     <div className={styles.ocrHeader}>
@@ -215,14 +305,6 @@ const DocumentsPage = () => {
                         <strong>📄 Extracted Data</strong>
                         <span className={styles.docTypeBadge}>
                           {ocrResults[doc.id].documentType}
-                        </span>
-                      </div>
-                      <div className={styles.headerBadges}>
-                        {ocrResults[doc.id].cached && (
-                          <span className={styles.cachedBadge}>Cached</span>
-                        )}
-                        <span className={`${styles.confidenceBadge} ${styles[ocrResults[doc.id].confidence]}`}>
-                          {ocrResults[doc.id].confidence}
                         </span>
                       </div>
                     </div>
@@ -249,6 +331,8 @@ const DocumentsPage = () => {
                     </div>
                   </div>
                 )}
+
+
 
                 {/* PDF Tampering Results */}
                 {tamperingResults[doc.id] && (
@@ -287,3 +371,7 @@ const DocumentsPage = () => {
 };
 
 export default DocumentsPage;
+
+
+
+

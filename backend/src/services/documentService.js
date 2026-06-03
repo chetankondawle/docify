@@ -10,9 +10,10 @@ let nextId = 1;
  * Save document metadata
  * @param {Object} file - Multer file object
  * @param {Object} user - User info (optional for now)
+ * @param {string} documentType - Document type (e.g., 'AADHAAR_CARD', 'PAN_CARD')
  * @returns {Object} Document metadata
  */
-const saveDocument = (file, user = null) => {
+const saveDocument = (file, user = null, documentType = null) => {
   const document = {
     id: nextId++,
     originalName: file.originalname,
@@ -22,6 +23,7 @@ const saveDocument = (file, user = null) => {
     size: file.size,
     sizeFormatted: formatFileSize(file.size),
     category: getFileCategory(file.mimetype),
+    documentType: documentType, // Store the document type selected during upload
     uploadedBy: user?.id || null,
     uploadedAt: new Date().toISOString(),
     ocrData: null, // OCR extracted data (JSON)

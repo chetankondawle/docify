@@ -34,8 +34,58 @@
   color: var(--color-danger);
 }
 
+.alert[data-type='info'] {
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e40af;
+}
+
 .uploadSection {
   max-width: 600px;
+}
+
+/* Upload document type selector */
+.uploadTypeSelector {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.uploadLabel {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 0.5rem;
+}
+
+.uploadSelect {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.uploadSelect:hover:not(:disabled) {
+  border-color: var(--color-primary);
+}
+
+.uploadSelect:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.uploadSelect:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .documentsSection {
@@ -220,6 +270,60 @@
   font-weight: 600;
   text-transform: capitalize;
   border-radius: var(--radius-sm);
+}
+
+/* Badge for uploaded document type in card header */
+.docTypeBadgeUploaded {
+  display: inline-block;
+  padding: 0.375rem 0.75rem;
+  background-color: #e0e7ff;
+  color: #4338ca;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  border-radius: var(--radius-md);
+  border: 1px solid #c7d2fe;
+}
+
+/* Structured extraction section */
+.structuredExtraction {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.structuredLabel {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.structuredExtraction select {
+  flex: 1;
+  min-width: 150px;
+  padding: 0.375rem 0.625rem;
+  font-size: 0.8125rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.structuredExtraction select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.structuredExtraction button {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+  white-space: nowrap;
 }
 
 .cachedBadge {

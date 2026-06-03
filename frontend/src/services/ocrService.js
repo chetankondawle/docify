@@ -8,13 +8,19 @@ import apiClient from './api';
 export const extractOCR = (documentId) => apiClient.post(`/ocr/extract/${documentId}`);
 
 /**
- * Extract structured data from a document
+ * Extract structured data from a document based on document type
  * @param {number} documentId
- * @param {string} schema - Description of expected data structure
+ * @param {string} documentType - The type of document in ALL_CAPS_UNDERSCORE format (e.g., 'AADHAAR_CARD')
  * @returns {Promise}
  */
-export const extractStructuredData = (documentId, schema) => 
-  apiClient.post(`/ocr/structured/${documentId}`, { schema });
+export const extractStructuredData = (documentId, documentType) => 
+  apiClient.post(`/ocr/structured/${documentId}`, { documentType });
+
+/**
+ * Fetch available document types and their schemas from the backend
+ * @returns {Promise<Array<string>>} - A promise that resolves with an array of document type strings in ALL_CAPS_UNDERSCORE format.
+ */
+export const getDocumentTypes = () => apiClient.get('/ocr/documentTypes'); // This endpoint returns { data: { documentTypes: [...] } } in ALL_CAPS_UNDERSCORE format
 
 /**
  * Batch extract OCR from multiple documents
@@ -23,3 +29,5 @@ export const extractStructuredData = (documentId, schema) =>
  */
 export const batchExtractOCR = (documentIds) => 
   apiClient.post('/ocr/batch', { documentIds });
+
+

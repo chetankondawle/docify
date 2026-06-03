@@ -5,7 +5,7 @@ import styles from './FileUpload.module.css';
  * FileUpload Component
  * Accepts images (JPEG, PNG, GIF, WEBP) and PDF files
  */
-const FileUpload = ({ onUploadSuccess, onUploadError }) => {
+const FileUpload = ({ onUploadSuccess, onUploadError, selectedDocumentType }) => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -56,8 +56,14 @@ const FileUpload = ({ onUploadSuccess, onUploadError }) => {
       return;
     }
 
+    if (!selectedDocumentType) {
+      setError('Please select a document type first.');
+      return;
+    }
+
     const formData = new FormData();
     formData.append('document', selectedFile);
+    formData.append('documentType', selectedDocumentType); // Add document type to form data
 
     setUploading(true);
     setError(null);
