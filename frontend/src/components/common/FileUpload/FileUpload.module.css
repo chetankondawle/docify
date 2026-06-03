@@ -1,0 +1,119 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.uploadArea {
+  position: relative;
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 2rem;
+  text-align: center;
+  transition: border-color 0.2s;
+}
+
+.uploadArea:hover {
+  border-color: var(--color-primary);
+}
+
+.fileInput {
+  width: 100%;
+  padding: 0.5rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.fileInput:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hint {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.error {
+  padding: 0.75rem;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  color: var(--color-danger);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+}
+
+.fileInfo {
+  padding: 0.75rem;
+  background-color: #f1f5f9;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+}
+
+.fileName {
+  margin-bottom: 0.25rem;
+}
+
+.fileSize {
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+}
+
+.preview {
+  display: flex;
+  justify-content: center;
+  padding: 1rem;
+  background-color: #f8fafc;
+  border-radius: var(--radius-md);
+}
+
+.previewImage {
+  max-width: 100%;
+  max-height: 300px;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.btn {
+  flex: 1;
+  padding: 0.625rem 1.25rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color 0.2s, opacity 0.2s;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btnPrimary {
+  background-color: var(--color-primary);
+  color: #fff;
+}
+
+.btnPrimary:hover:not(:disabled) {
+  background-color: var(--color-primary-hover);
+}
+
+.btnSecondary {
+  background-color: var(--color-secondary);
+  color: #fff;
+}
+
+.btnSecondary:hover:not(:disabled) {
+  background-color: #475569;
+}
