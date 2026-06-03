@@ -1,0 +1,45 @@
+{
+  "AADHAAR_CARD": {
+    "documentType": "AADHAAR_CARD",
+    "schema": {
+      "name": "string",
+      "gender": "string",
+      "dateOfBirth": "string (YYYY-MM-DD)",
+      "aadhaarNumber": "string",
+      "address": "string"
+    }
+  },
+  "PAN_CARD": {
+    "documentType": "PAN_CARD",
+    "schema": {
+      "name": "string",
+      "fatherName": "string",
+      "dateOfBirth": "string (YYYY-MM-DD)",
+      "panNumber": "string"
+    }
+  },
+  "PASSPORT": {
+    "documentType": "PASSPORT",
+    "schema": {
+      "name": "string",
+      "gender": "string",
+      "dateOfBirth": "string (YYYY-MM-DD)",
+      "dateOfIssue": "string (YYYY-MM-DD)",
+      "dateOfExpiry": "string (YYYY-MM-DD)",
+      "passportNumber": "string"
+    }
+  },
+  "SALARY_SLIP": {
+    "documentType": "SALARY_SLIP",
+    "schema": {
+      "employeeName": "string",
+      "employeeId": "string",
+      "monthYear": "string (e.g., Month YYYY)",
+      "basicSalary": "number",
+      "allowances": "number",
+      "deductions": "number",
+      "netSalary": "number",
+      "employeePanNumber": "string"
+    }
+  }
+}
