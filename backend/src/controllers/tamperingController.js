@@ -1,4 +1,5 @@
 const tamperingService = require('../services/tamperingService');
+const geminiService = require('../services/geminiService');
 const documentService = require('../services/documentService');
 const { sendSuccess, sendError, sendNotFound } = require('../utils/response');
 const asyncHandler = require('../middleware/asyncHandler');
@@ -68,6 +69,92 @@ const checkPDFTampering = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * @desc    Check image for tampering
+ * @route   POST /api/v1/tampering/check-image/:id
+ * @access  Public
+ */
+const checkImageTampering = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const document = documentService.getDocumentById(id);
+
+  if (!document) {
+    return sendNotFound(res, 'Document not found');
+  }
+
+  if (!document.mimetype || !document.mimetype.startsWith('image/')) {
+    return sendError(res, 'Document is not an image', 400);
+  }
+
+  if (document.imageTampering) {
+    return sendSuccess(res, {
+      documentId: document.id,
+      ...document.imageTampering,
+      cached: true,
+    }, 'Image tampering check retrieved from cache');
+  }
+
+  try {
+    logger.info(`Running image tampering check for document ID: ${id}`);
+
+    // Primary check: heuristic + EXIF + ELA
+    const tamperingResult = await tamperingService.checkImageTampering(document.path, document.mimetype);
+
+    // Secondary check: Gemini forensic clarification
+    let aiAnalysis = null;
+    try {
+      aiAnalysis = await geminiService.analyzeImageForTampering(
+        document.path,
+        document.mimetype,
+        tamperingResult.checks
+      );
+    } catch (geminiErr) {
+      logger.warn(`Gemini clarification skipped: ${geminiErr.message}`);
+      aiAnalysis = { success: false, verdict: 'unknown', error: geminiErr.message };
+    }
+
+    // Combine: heuristic stays primary; Gemini overrides 'safe' if it strongly disagrees
+    const aiTampered = aiAnalysis && aiAnalysis.verdict === 'likely_tampered';
+    const aiSuspicious = aiAnalysis && aiAnalysis.verdict === 'suspicious';
+    const finalSafe = tamperingResult.safe && !aiTampered && !(aiSuspicious && aiAnalysis.confidence === 'high');
+
+    const finalResult = {
+      ...tamperingResult,
+      safe: finalSafe,
+      aiAnalysis,
+    };
+
+    documentService.updateImageTamperingResults(id, finalResult);
+
+    logger.info(`Image tampering check completed. Risk: ${tamperingResult.riskLevel}, AI verdict: ${aiAnalysis?.verdict || 'n/a'}`);
+
+    sendSuccess(res, {
+      documentId: document.id,
+      safe: finalResult.safe,
+      riskScore: tamperingResult.riskScore,
+      riskLevel: tamperingResult.riskLevel,
+      format: tamperingResult.format,
+      checks: tamperingResult.checks,
+      aiAnalysis,
+      summary: tamperingResult.summary,
+      cached: false,
+    }, 'Image tampering check completed successfully');
+
+  } catch (error) {
+    logger.error(`Image tampering check failed for document ID: ${id}`, error.message);
+
+    documentService.updateImageTamperingResults(id, {
+      safe: false,
+      riskLevel: 'unknown',
+      summary: 'Tampering check failed',
+    });
+
+    return sendError(res, error.message, 500);
+  }
+});
+
 module.exports = {
   checkPDFTampering,
+  checkImageTampering,
 };
