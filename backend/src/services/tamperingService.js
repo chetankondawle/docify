@@ -1,5 +1,7 @@
 const fs = require('fs');
 const { PDFParse } = require('pdf-parse');
+const ExifParser = require('exif-parser');
+const sharp = require('sharp');
 const logger = require('../utils/logger');
 
 /**
@@ -364,10 +366,6 @@ const extractDate = (dateStr) => {
   return null;
 };
 
-module.exports = {
-  checkPDFTampering,
-};
-
 /**
  * Check EOF marker validity
  */
@@ -385,3 +383,512 @@ const checkEOFMarker = (content) => {
     risk: dataAfterEOF ? 20 : (!hasEOF ? 10 : 0),
   };
 };
+
+
+/**
+ * Perform comprehensive image tampering checks
+ * @param {string} filePath - Path to image file
+ * @param {string} mimeType - Declared MIME type (e.g., 'image/jpeg', 'image/png')
+ * @returns {Promise<Object>} - Tampering check results
+ */
+const checkImageTampering = async (filePath, mimeType) => {
+  try {
+    const buffer = fs.readFileSync(filePath);
+    const format = detectImageFormat(buffer);
+
+    const checks = {
+      fileSignature: checkImageFileSignature(buffer, mimeType, format),
+      softwareFingerprint: checkSoftwareFingerprint(buffer),
+      exifMetadata: checkExifMetadata(buffer, format),
+      errorLevelAnalysis: await checkErrorLevelAnalysis(filePath, format),
+      trailingData: checkImageTrailingData(buffer, format),
+      multipleImages: checkMultipleImages(buffer, format),
+      commentChunks: checkCommentChunks(buffer, format),
+      structuralIntegrity: checkImageStructuralIntegrity(buffer, format),
+      thumbnailPresence: checkThumbnailPresence(buffer, format),
+    };
+
+    const riskScore = calculateRiskScore(checks);
+
+    return {
+      safe: riskScore < 30,
+      riskScore,
+      riskLevel: getRiskLevel(riskScore),
+      format,
+      checks,
+      summary: generateImageSummary(checks, riskScore),
+    };
+  } catch (error) {
+    logger.error('Image tampering check failed:', error.message);
+    throw new Error(`Image tampering check failed: ${error.message}`);
+  }
+};
+
+/**
+ * Detect image format from magic bytes
+ */
+const detectImageFormat = (buffer) => {
+  if (buffer.length < 12) return 'unknown';
+  if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return 'jpeg';
+  if (
+    buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47 &&
+    buffer[4] === 0x0D && buffer[5] === 0x0A && buffer[6] === 0x1A && buffer[7] === 0x0A
+  ) return 'png';
+  const head6 = buffer.slice(0, 6).toString('ascii');
+  if (head6 === 'GIF87a' || head6 === 'GIF89a') return 'gif';
+  if (buffer.slice(0, 4).toString('ascii') === 'RIFF' && buffer.slice(8, 12).toString('ascii') === 'WEBP') return 'webp';
+  if (buffer[0] === 0x42 && buffer[1] === 0x4D) return 'bmp';
+  return 'unknown';
+};
+
+/**
+ * Check that file signature matches declared MIME type
+ */
+const checkImageFileSignature = (buffer, mimeType, format) => {
+  const mimeMap = {
+    'image/jpeg': 'jpeg',
+    'image/jpg': 'jpeg',
+    'image/pjpeg': 'jpeg',
+    'image/png': 'png',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+    'image/bmp': 'bmp',
+  };
+  const expected = mimeMap[mimeType] || null;
+  const mismatch = expected !== null && expected !== format;
+  const unknown = format === 'unknown';
+
+  return {
+    passed: !mismatch && !unknown,
+    declaredMimeType: mimeType,
+    detectedFormat: format,
+    mismatch,
+    message: unknown
+      ? 'Unknown image format (invalid signature)'
+      : mismatch
+        ? `Signature mismatch: declared ${mimeType}, detected ${format}`
+        : `Valid ${format.toUpperCase()} signature`,
+    risk: unknown ? 25 : mismatch ? 30 : 0,
+  };
+};
+
+/**
+ * Detect editing software signatures embedded in metadata
+ */
+const checkSoftwareFingerprint = (buffer) => {
+  const content = buffer.toString('latin1');
+  const signatures = [
+    { name: 'Adobe Photoshop', regex: /Adobe Photoshop/i, weight: 15 },
+    { name: 'Adobe Lightroom', regex: /Adobe Lightroom/i, weight: 10 },
+    { name: 'Adobe Illustrator', regex: /Adobe Illustrator/i, weight: 15 },
+    { name: 'GIMP', regex: /GIMP/i, weight: 15 },
+    { name: 'Paint.NET', regex: /Paint\.NET/i, weight: 15 },
+    { name: 'Pixelmator', regex: /Pixelmator/i, weight: 15 },
+    { name: 'Affinity Photo', regex: /Affinity Photo/i, weight: 15 },
+    { name: 'ImageMagick', regex: /ImageMagick/i, weight: 10 },
+    { name: 'PaintShop', regex: /Paint Shop|PaintShop/i, weight: 15 },
+    { name: 'Canva', regex: /Canva/i, weight: 10 },
+  ];
+
+  const detected = signatures.filter((s) => s.regex.test(content)).map((s) => s.name);
+  const risk = signatures.reduce((sum, s) => sum + (s.regex.test(content) ? s.weight : 0), 0);
+  const suspicious = detected.length > 0;
+
+  return {
+    passed: !suspicious,
+    detectedSoftware: detected,
+    message: suspicious
+      ? `Image edited with: ${detected.join(', ')}`
+      : 'No editing software signatures detected',
+    risk: Math.min(risk, 30),
+  };
+};
+
+/**
+ * Check EXIF metadata presence and date consistency (JPEG only)
+ */
+const checkExifMetadata = (buffer, format) => {
+  if (format !== 'jpeg') {
+    return {
+      passed: true,
+      hasExif: false,
+      message: `EXIF not applicable for ${format}`,
+      risk: 0,
+    };
+  }
+
+  let tags;
+  try {
+    const parser = ExifParser.create(buffer);
+    const result = parser.parse();
+    tags = result.tags || {};
+  } catch (error) {
+    return {
+      passed: false,
+      hasExif: false,
+      message: `EXIF parse failed: ${error.message}`,
+      risk: 5,
+    };
+  }
+
+  if (Object.keys(tags).length === 0) {
+    return {
+      passed: false,
+      hasExif: false,
+      message: 'No EXIF metadata (possibly stripped during editing)',
+      risk: 10,
+    };
+  }
+
+  const software = tags.Software || null;
+  const make = tags.Make || null;
+  const model = tags.Model || null;
+  const dateTimeOriginal = tags.DateTimeOriginal ? new Date(tags.DateTimeOriginal * 1000) : null;
+  const modifyDate = tags.ModifyDate ? new Date(tags.ModifyDate * 1000) : null;
+  const createDate = tags.CreateDate ? new Date(tags.CreateDate * 1000) : null;
+  const hasGPS = !!(tags.GPSLatitude || tags.GPSLongitude);
+
+  const editorPatterns = /Photoshop|GIMP|Lightroom|Paint|Pixelmator|Affinity|Canva|ImageMagick|Snapseed|Picsa/i;
+  const editedBySoftware = software && editorPatterns.test(software);
+
+  let dateInconsistent = false;
+  let dateDiffSeconds = 0;
+  if (dateTimeOriginal && modifyDate) {
+    dateDiffSeconds = Math.abs((modifyDate - dateTimeOriginal) / 1000);
+    // Modification > 5 minutes after capture is suspicious for unedited photos
+    dateInconsistent = dateDiffSeconds > 300;
+  }
+
+  // Genuine camera photos always carry Make/Model; absence on a JPEG with EXIF is suspicious
+  const missingCameraInfo = !make && !model;
+
+  let risk = 0;
+  if (editedBySoftware) risk += 20;
+  if (dateInconsistent) risk += 15;
+  if (missingCameraInfo) risk += 5;
+
+  const messages = [];
+  if (editedBySoftware) messages.push(`Software: ${software}`);
+  if (dateInconsistent) messages.push(`Modified ${Math.round(dateDiffSeconds / 60)}min after capture`);
+  if (missingCameraInfo) messages.push('No camera Make/Model');
+  if (messages.length === 0) messages.push(`EXIF valid${make ? ` (${make}${model ? ` ${model}` : ''})` : ''}`);
+
+  return {
+    passed: !editedBySoftware && !dateInconsistent,
+    hasExif: true,
+    software,
+    make,
+    model,
+    dateTimeOriginal: dateTimeOriginal ? dateTimeOriginal.toISOString() : null,
+    modifyDate: modifyDate ? modifyDate.toISOString() : null,
+    createDate: createDate ? createDate.toISOString() : null,
+    hasGPS,
+    editedBySoftware,
+    dateInconsistent,
+    dateDiffSeconds: Math.round(dateDiffSeconds),
+    message: messages.join('; '),
+    risk: Math.min(risk, 30),
+  };
+};
+
+/**
+ * Error Level Analysis (ELA) — re-saves the image at known JPEG quality and measures
+ * pixel-wise differences. Authentic images compress uniformly (low variance); edited
+ * regions often show much higher error than the surrounding pixels (high variance).
+ */
+const checkErrorLevelAnalysis = async (filePath, format) => {
+  if (format !== 'jpeg' && format !== 'png' && format !== 'webp') {
+    return {
+      passed: true,
+      message: `ELA not applicable for ${format}`,
+      risk: 0,
+    };
+  }
+
+  try {
+    const { data: originalRaw, info } = await sharp(filePath)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const resavedJpeg = await sharp(filePath).jpeg({ quality: 90 }).toBuffer();
+    const resavedRaw = await sharp(resavedJpeg).raw().toBuffer();
+
+    const length = Math.min(originalRaw.length, resavedRaw.length);
+    // Sample for speed on large images (~200k samples max)
+    const sampleStep = Math.max(1, Math.floor(length / 200000));
+    let sum = 0;
+    let sumSq = 0;
+    let max = 0;
+    let count = 0;
+
+    for (let i = 0; i < length; i += sampleStep) {
+      const diff = Math.abs(originalRaw[i] - resavedRaw[i]);
+      sum += diff;
+      sumSq += diff * diff;
+      if (diff > max) max = diff;
+      count++;
+    }
+
+    const mean = sum / count;
+    const variance = sumSq / count - mean * mean;
+    const stdDev = Math.sqrt(Math.max(0, variance));
+    const errorRatio = mean > 0 ? max / mean : 0;
+
+    // Typical untouched JPEG: mean < 5, stdDev < 15. Tampered regions push stdDev up.
+    const suspicious = stdDev > 25 || errorRatio > 60;
+    const risk = Math.min(25, Math.round(stdDev / 2) + (suspicious ? 5 : 0));
+
+    return {
+      passed: !suspicious,
+      meanError: parseFloat(mean.toFixed(2)),
+      stdDev: parseFloat(stdDev.toFixed(2)),
+      maxError: max,
+      errorRatio: parseFloat(errorRatio.toFixed(2)),
+      sampleSize: count,
+      dimensions: { width: info.width, height: info.height, channels: info.channels },
+      message: suspicious
+        ? `ELA suggests possible local edits (stdDev=${stdDev.toFixed(1)}, ratio=${errorRatio.toFixed(1)})`
+        : `ELA shows uniform compression (stdDev=${stdDev.toFixed(1)})`,
+      risk,
+    };
+  } catch (error) {
+    logger.warn(`ELA failed for ${filePath}: ${error.message}`);
+    return {
+      passed: true,
+      message: `ELA skipped: ${error.message}`,
+      risk: 0,
+    };
+  }
+};
+
+/**
+ * Check for trailing data after image end marker
+ */
+const checkImageTrailingData = (buffer, format) => {
+  let endMarkerIndex = -1;
+  let endMarkerSize = 0;
+
+  if (format === 'jpeg') {
+    for (let i = buffer.length - 2; i >= 0; i--) {
+      if (buffer[i] === 0xFF && buffer[i + 1] === 0xD9) {
+        endMarkerIndex = i;
+        endMarkerSize = 2;
+        break;
+      }
+    }
+  } else if (format === 'png') {
+    const iendSignature = Buffer.from([0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82]);
+    endMarkerIndex = buffer.lastIndexOf(iendSignature);
+    if (endMarkerIndex !== -1) endMarkerSize = iendSignature.length;
+  } else {
+    return {
+      passed: true,
+      message: `Trailing data check not implemented for ${format}`,
+      risk: 0,
+    };
+  }
+
+  if (endMarkerIndex === -1) {
+    return {
+      passed: false,
+      message: 'End marker not found',
+      risk: 15,
+    };
+  }
+
+  const trailingBytes = buffer.length - (endMarkerIndex + endMarkerSize);
+  const hasTrailing = trailingBytes > 0;
+
+  return {
+    passed: !hasTrailing,
+    trailingBytes,
+    message: hasTrailing
+      ? `${trailingBytes} bytes of data after image end marker`
+      : 'No trailing data',
+    risk: hasTrailing ? Math.min(20, 5 + Math.floor(trailingBytes / 100)) : 0,
+  };
+};
+
+/**
+ * Check for multiple embedded images (concatenated files)
+ */
+const checkMultipleImages = (buffer, format) => {
+  let count = 0;
+  if (format === 'jpeg') {
+    for (let i = 0; i < buffer.length - 2; i++) {
+      if (buffer[i] === 0xFF && buffer[i + 1] === 0xD8 && buffer[i + 2] === 0xFF) count++;
+    }
+  } else if (format === 'png') {
+    const sig = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+    let from = 0;
+    while ((from = buffer.indexOf(sig, from)) !== -1) {
+      count++;
+      from += sig.length;
+    }
+  } else {
+    return {
+      passed: true,
+      imageCount: 1,
+      message: `Multi-image check not implemented for ${format}`,
+      risk: 0,
+    };
+  }
+
+  // JPEG legitimately has 2 SOI markers when an EXIF thumbnail is embedded.
+  const suspicious = count > 2;
+
+  return {
+    passed: !suspicious,
+    imageCount: count,
+    message: suspicious
+      ? `Suspicious: ${count} image signatures found (possible concatenation)`
+      : count > 1
+        ? `${count} image signatures (likely embedded thumbnail)`
+        : 'Single image structure',
+    risk: suspicious ? 20 : 0,
+  };
+};
+
+/**
+ * Check for excessive comment/text chunks (PNG tEXt/iTXt/zTXt, JPEG COM)
+ */
+const checkCommentChunks = (buffer, format) => {
+  let count = 0;
+  const chunkTypes = [];
+
+  if (format === 'png') {
+    ['tEXt', 'iTXt', 'zTXt'].forEach((t) => {
+      const sig = Buffer.from(t, 'ascii');
+      let from = 0;
+      let typeCount = 0;
+      while ((from = buffer.indexOf(sig, from)) !== -1) {
+        typeCount++;
+        from += sig.length;
+      }
+      if (typeCount > 0) chunkTypes.push(`${t}:${typeCount}`);
+      count += typeCount;
+    });
+  } else if (format === 'jpeg') {
+    for (let i = 0; i < buffer.length - 1; i++) {
+      if (buffer[i] === 0xFF && buffer[i + 1] === 0xFE) {
+        count++;
+        chunkTypes.push('COM');
+      }
+    }
+  } else {
+    return {
+      passed: true,
+      commentCount: 0,
+      message: `Comment check not applicable for ${format}`,
+      risk: 0,
+    };
+  }
+
+  const suspicious = count > 5;
+
+  return {
+    passed: !suspicious,
+    commentCount: count,
+    chunkTypes,
+    message: suspicious
+      ? `Excessive comment/text chunks: ${count}`
+      : `${count} comment/text chunks`,
+    risk: suspicious ? 10 : 0,
+  };
+};
+
+/**
+ * Check image structural integrity
+ */
+const checkImageStructuralIntegrity = (buffer, format) => {
+  let valid = true;
+  const issues = [];
+
+  if (format === 'jpeg') {
+    const startsOK = buffer[0] === 0xFF && buffer[1] === 0xD8;
+    const endsOK = buffer[buffer.length - 2] === 0xFF && buffer[buffer.length - 1] === 0xD9;
+    if (!startsOK) { valid = false; issues.push('Missing SOI marker'); }
+    if (!endsOK) { valid = false; issues.push('Missing or misplaced EOI marker'); }
+  } else if (format === 'png') {
+    const ihdrAtStart = buffer.slice(12, 16).toString('ascii') === 'IHDR';
+    const iendAtEnd = buffer.slice(buffer.length - 8, buffer.length - 4).toString('ascii') === 'IEND';
+    if (!ihdrAtStart) { valid = false; issues.push('IHDR not at expected position'); }
+    if (!iendAtEnd) { valid = false; issues.push('IEND not at end of file'); }
+  } else {
+    return {
+      passed: true,
+      issues,
+      message: `Structural check not implemented for ${format}`,
+      risk: 0,
+    };
+  }
+
+  return {
+    passed: valid,
+    issues,
+    message: valid ? 'Image structure valid' : `Structural issues: ${issues.join(', ')}`,
+    risk: valid ? 0 : 20,
+  };
+};
+
+/**
+ * Check for embedded thumbnail (informational; missing thumbnail can indicate re-encoding)
+ */
+const checkThumbnailPresence = (buffer, format) => {
+  if (format !== 'jpeg') {
+    return {
+      passed: true,
+      hasThumbnail: false,
+      message: `Thumbnail check not applicable for ${format}`,
+      risk: 0,
+    };
+  }
+  const searchEnd = Math.min(buffer.length, 65536);
+  let soiCount = 0;
+  for (let i = 0; i < searchEnd - 2; i++) {
+    if (buffer[i] === 0xFF && buffer[i + 1] === 0xD8 && buffer[i + 2] === 0xFF) {
+      soiCount++;
+      if (soiCount >= 2) break;
+    }
+  }
+  const hasThumbnail = soiCount >= 2;
+
+  return {
+    passed: true,
+    hasThumbnail,
+    message: hasThumbnail
+      ? 'Embedded thumbnail present'
+      : 'No embedded thumbnail (may indicate re-encoded image)',
+    risk: 0,
+  };
+};
+
+/**
+ * Generate human-readable summary for image tampering check
+ */
+const generateImageSummary = (checks, riskScore) => {
+  const warnings = [];
+  if (checks.fileSignature.mismatch) warnings.push('File signature mismatch');
+  if (checks.softwareFingerprint.detectedSoftware && checks.softwareFingerprint.detectedSoftware.length > 0) {
+    warnings.push(`Edited with ${checks.softwareFingerprint.detectedSoftware.join(', ')}`);
+  }
+  if (checks.exifMetadata.editedBySoftware) warnings.push(`EXIF Software: ${checks.exifMetadata.software}`);
+  if (checks.exifMetadata.dateInconsistent) warnings.push('EXIF date inconsistency');
+  if (checks.exifMetadata.hasExif === false && checks.exifMetadata.passed === false) warnings.push('EXIF metadata missing');
+  if (checks.errorLevelAnalysis && !checks.errorLevelAnalysis.passed) warnings.push('ELA anomalies');
+  if (checks.trailingData.trailingBytes > 0) warnings.push('Data after image end marker');
+  if (checks.multipleImages.imageCount > 2) warnings.push('Multiple image signatures');
+  if (checks.commentChunks.commentCount > 5) warnings.push('Excessive comment chunks');
+  if (!checks.structuralIntegrity.passed) warnings.push('Structural issues');
+
+  if (warnings.length === 0) {
+    return 'Image appears safe with no suspicious indicators';
+  }
+  return `Risk level ${getRiskLevel(riskScore)}: ${warnings.join(', ')}`;
+};
+
+module.exports = {
+  checkPDFTampering,
+  checkImageTampering,
+};
+

@@ -4,7 +4,7 @@ import FileUpload from '@components/common/FileUpload';
 import Button from '@components/common/Button';
 import { getAllDocuments, deleteDocument } from '@services/documentService';
 import { extractOCR, extractStructuredData, getDocumentTypes } from '@services/ocrService';
-import { checkTampering } from '@services/tamperingService';
+import { checkTampering, checkImageTampering } from '@services/tamperingService';
 import { validateDocument, validateDocuments } from '@services/validateService';
 import { getUserInfo, clearUserInfo } from '@services/userFormService';
 import styles from './Documents.module.css';
@@ -153,12 +153,24 @@ const DocumentsPage = () => {
   };
 
 
-  const handleCheckTampering = async (docId, docName) => {
+  const handleCheckTampering = async (docId, docName, mimetype) => {
     setTamperingLoading((prev) => ({ ...prev, [docId]: true }));
     setError(null);
 
+    const isImage = typeof mimetype === 'string' && mimetype.startsWith('image/');
+    const isPdf = mimetype === 'application/pdf';
+
+    if (!isImage && !isPdf) {
+      setError('Security check is only supported for PDF and image files');
+      setTimeout(() => setError(null), 5000);
+      setTamperingLoading((prev) => ({ ...prev, [docId]: false }));
+      return;
+    }
+
     try {
-      const response = await checkTampering(docId);
+      const response = isImage
+        ? await checkImageTampering(docId)
+        : await checkTampering(docId);
 
       setTamperingResults((prev) => ({
         ...prev,
@@ -166,20 +178,22 @@ const DocumentsPage = () => {
           safe: response.data.safe,
           riskScore: response.data.riskScore,
           riskLevel: response.data.riskLevel,
+          format: response.data.format,
           checks: response.data.checks,
+          aiAnalysis: response.data.aiAnalysis || null,
           summary: response.data.summary,
           cached: response.data.cached,
         },
       }));
 
       setSuccessMessage(
-        `PDF tampering check completed for "${docName}"${
+        `${isImage ? 'Image' : 'PDF'} security check completed for "${docName}"${
           response.data.cached ? ' (cached)' : ''
         }`
       );
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err) {
-      setError(err.message || 'PDF tampering check failed');
+      setError(err.message || 'Security check failed');
       setTimeout(() => setError(null), 5000);
     } finally {
       setTamperingLoading((prev) => ({ ...prev, [docId]: false }));
@@ -492,9 +506,10 @@ const DocumentsPage = () => {
                     {ocrLoading[doc.id] ? '🔄 Extracting...' : '🔍 Extract OCR'}
                   </button>
 
-                  {doc.mimetype === 'application/pdf' && (
+                  {/* Tampering Check Button (PDF or Image) */}
+                  {(doc.mimetype === 'application/pdf' || (doc.mimetype && doc.mimetype.startsWith('image/'))) && (
                     <button
-                      onClick={() => handleCheckTampering(doc.id, doc.originalName)}
+                      onClick={() => handleCheckTampering(doc.id, doc.originalName, doc.mimetype)}
                       disabled={tamperingLoading[doc.id]}
                       className={styles.tamperingBtn}
                     >
@@ -627,7 +642,67 @@ const DocumentsPage = () => {
                     </p>
                     <div className={styles.riskScore}>
                       Risk Score: {tamperingResults[doc.id].riskScore}/100
+                      {tamperingResults[doc.id].format && (
+                        <span className={styles.formatBadge}>
+                          {tamperingResults[doc.id].format.toUpperCase()}
+                        </span>
+                      )}
                     </div>
+
+                    {/* AI Analysis (Gemini) — image only */}
+                    {tamperingResults[doc.id].aiAnalysis &&
+                      tamperingResults[doc.id].aiAnalysis.success && (
+                        <div className={styles.aiSection}>
+                          <div className={styles.aiHeader}>
+                            <span className={styles.aiTitle}>🤖 AI Forensic Analysis</span>
+                            <div className={styles.headerBadges}>
+                              <span
+                                className={`${styles.verdictBadge} ${
+                                  styles[tamperingResults[doc.id].aiAnalysis.verdict] || ''
+                                }`}
+                              >
+                                {(tamperingResults[doc.id].aiAnalysis.verdict || 'unknown').replace('_', ' ')}
+                              </span>
+                              {tamperingResults[doc.id].aiAnalysis.confidence && (
+                                <span
+                                  className={`${styles.confidenceBadge} ${
+                                    styles[tamperingResults[doc.id].aiAnalysis.confidence] || ''
+                                  }`}
+                                >
+                                  {tamperingResults[doc.id].aiAnalysis.confidence}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {tamperingResults[doc.id].aiAnalysis.explanation && (
+                            <p className={styles.aiExplanation}>
+                              {tamperingResults[doc.id].aiAnalysis.explanation}
+                            </p>
+                          )}
+                          {tamperingResults[doc.id].aiAnalysis.visualFindings &&
+                            tamperingResults[doc.id].aiAnalysis.visualFindings.length > 0 && (
+                              <div className={styles.aiFindingsBlock}>
+                                <div className={styles.aiFindingsLabel}>Visual findings:</div>
+                                <ul className={styles.aiFindingsList}>
+                                  {tamperingResults[doc.id].aiAnalysis.visualFindings.map((f, i) => (
+                                    <li key={i}>{f}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          {tamperingResults[doc.id].aiAnalysis.regionsOfConcern &&
+                            tamperingResults[doc.id].aiAnalysis.regionsOfConcern.length > 0 && (
+                              <div className={styles.aiFindingsBlock}>
+                                <div className={styles.aiFindingsLabel}>Regions of concern:</div>
+                                <ul className={styles.aiFindingsList}>
+                                  {tamperingResults[doc.id].aiAnalysis.regionsOfConcern.map((r, i) => (
+                                    <li key={i}>{r}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                        </div>
+                      )}
                   </div>
                 )}
               </div>

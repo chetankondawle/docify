@@ -201,7 +201,94 @@ Return ONLY the JSON object, nothing else.`;
   }
 };
 
+/**
+ * Forensic image tampering analysis — visual second-opinion on top of heuristic checks
+ * @param {string} filePath - Path to the image file
+ * @param {string} mimeType - MIME type of the file
+ * @param {Object} heuristicChecks - Results from tamperingService heuristic checks
+ * @returns {Promise<Object>} - Gemini's verdict and findings
+ */
+const analyzeImageForTampering = async (filePath, mimeType, heuristicChecks) => {
+  try {
+    logger.info(`Starting Gemini tampering analysis for: ${filePath}`);
+
+    const model = initGemini();
+    const fileBuffer = fs.readFileSync(filePath);
+    const base64Data = fileBuffer.toString('base64');
+
+    const imagePart = {
+      inlineData: { data: base64Data, mimeType },
+    };
+
+    const heuristicSummary = JSON.stringify(heuristicChecks, null, 2);
+
+    const prompt = `You are a forensic image analyst. Inspect the attached image for signs of digital tampering or manipulation.
+
+Automated heuristic checks already produced these findings:
+${heuristicSummary}
+
+Visually inspect the image and look for:
+- Inconsistent shadows, lighting, or reflections
+- Misaligned, blurred, or mismatched text (especially in IDs, certificates, or documents)
+- Visible cloning, copy-paste, or healing artifacts
+- Inconsistent fonts, colors, kerning, or background patterns within the same region
+- Edges that suggest a pasted or overlaid element
+- Resolution or compression mismatches between regions
+- Anything that contradicts or confirms the heuristic findings above
+
+Return ONLY a valid JSON object with this structure:
+{
+  "verdict": "authentic" | "suspicious" | "likely_tampered",
+  "confidence": "low" | "medium" | "high",
+  "visualFindings": ["finding 1", "finding 2"],
+  "regionsOfConcern": ["description of suspicious region 1"],
+  "agreesWithHeuristics": true | false,
+  "explanation": "1-2 sentence summary"
+}
+
+No markdown, no code blocks, only JSON.`;
+
+    const result = await model.generateContent([prompt, imagePart]);
+    const response = await result.response;
+    let text = response.text();
+    text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (parseError) {
+      logger.warn('Failed to parse Gemini tampering response as JSON');
+      parsed = {
+        verdict: 'unknown',
+        confidence: 'low',
+        visualFindings: [],
+        regionsOfConcern: [],
+        agreesWithHeuristics: null,
+        explanation: text.slice(0, 500),
+        parseError: parseError.message,
+      };
+    }
+
+    logger.info(`Gemini tampering analysis verdict: ${parsed.verdict}`);
+
+    return {
+      success: true,
+      ...parsed,
+      model: config.gemini.model,
+    };
+  } catch (error) {
+    logger.error('Gemini tampering analysis failed:', error.message);
+    return {
+      success: false,
+      verdict: 'unknown',
+      confidence: 'low',
+      error: error.message,
+    };
+  }
+};
+
 module.exports = {
   extractTextFromDocument,
   extractStructuredData,
+  analyzeImageForTampering,
 };

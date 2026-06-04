@@ -30,6 +30,7 @@ const saveDocument = (file, user = null, documentType = null) => {
     ocrProcessed: false, // OCR processing status
     ocrError: null, // OCR error if any
     pdfTampering: null, // PDF tampering check results
+    imageTampering: null, // Image tampering check results
   };
 
   documents.push(document);
@@ -107,6 +108,30 @@ const updatePDFTamperingResults = (id, tamperingResult) => {
   return document;
 };
 
+/**
+ * Update document with image tampering check results
+ * @param {number} id - Document ID
+ * @param {Object} tamperingResult - Tampering check result
+ * @returns {Object|null} Updated document or null
+ */
+const updateImageTamperingResults = (id, tamperingResult) => {
+  const document = getDocumentById(id);
+  if (!document) return null;
+
+  document.imageTampering = {
+    safe: tamperingResult.safe,
+    riskScore: tamperingResult.riskScore,
+    riskLevel: tamperingResult.riskLevel,
+    format: tamperingResult.format,
+    checks: tamperingResult.checks,
+    aiAnalysis: tamperingResult.aiAnalysis || null,
+    summary: tamperingResult.summary,
+    checkedAt: new Date().toISOString(),
+  };
+
+  return document;
+};
+
 module.exports = {
   saveDocument,
   getAllDocuments,
@@ -114,4 +139,5 @@ module.exports = {
   deleteDocument,
   updateDocumentOCR,
   updatePDFTamperingResults,
+  updateImageTamperingResults,
 };
