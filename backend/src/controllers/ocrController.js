@@ -1,5 +1,6 @@
 const geminiService = require('../services/geminiService');
 const documentService = require('../services/documentService');
+const validationService = require('../services/validationService');
 // Import schemas from JSON file
 const schemas = require('../config/schemas.json'); 
 const { sendSuccess, sendError, sendNotFound, sendBadRequest } = require('../utils/response');
@@ -48,6 +49,13 @@ const extractOCR = asyncHandler(async (req, res) => {
       model: ocrResult.model,
     });
 
+    // Run format validation on extracted data
+    const formatValidation = validationService.validateDocumentFormat(
+      ocrResult.data.extractedData,
+      ocrResult.data.documentType
+    );
+    documentService.updateDocumentFormatValidation(id, formatValidation);
+
     logger.info(`OCR extraction completed for document ID: ${id}`);
 
     sendSuccess(res, {
@@ -56,6 +64,7 @@ const extractOCR = asyncHandler(async (req, res) => {
       extractedData: ocrResult.data.extractedData,
       confidence: ocrResult.data.confidence,
       model: ocrResult.model,
+      formatValidation,
       cached: false,
     }, 'OCR extraction completed successfully');
 
@@ -135,11 +144,29 @@ const extractStructured = asyncHandler(async (req, res) => {
 
     logger.info(`Structured extraction completed for document ID: ${id}`);
 
+    // Save structured OCR data to document
+    documentService.updateDocumentOCR(id, {
+      data: {
+        documentType,
+        extractedData: result.data,
+        confidence: 'high',
+      },
+      model: result.model,
+    });
+
+    // Run format validation on extracted data
+    const formatValidation = validationService.validateDocumentFormat(
+      result.data,
+      documentType
+    );
+    documentService.updateDocumentFormatValidation(id, formatValidation);
+
     sendSuccess(res, {
       documentId: document.id,
-      documentType: documentType, // Use the provided documentType
-      extractedData: result.data, // Renamed from 'data' to 'extractedData' for clarity
+      documentType,
+      extractedData: result.data,
       model: result.model,
+      formatValidation,
     }, 'Structured data extraction completed');
 
   } catch (error) {
