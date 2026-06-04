@@ -258,38 +258,46 @@ const validateSingleDocument = (extractedData, documentType, userData) => {
 
   Object.entries(config.fields).forEach(([fieldKey, fieldConfig]) => {
     const ocrValue = normalized[fieldKey];
-    
+
     if (fieldConfig.matchWith && fieldConfig.matchWith.length > 0) {
       const userValues = fieldConfig.matchWith.map(key => userData[key]).filter(v => v);
-      
+
+      let isMatched = false;
+      let confidence = 0;
+
       if (ocrValue && userValues.length > 0) {
         const results = userValues.map(userValue =>
           matchFieldValue(ocrValue, userValue, fieldConfig.matchStrategy)
         );
-        
+
         const bestMatch = results.reduce((best, current) =>
           current.confidence > best.confidence ? current : best
         );
 
+        isMatched = bestMatch.matched;
+        confidence = bestMatch.confidence;
+
         // Special threshold for name fields - require 80% confidence
-        let isMatched = bestMatch.matched;
         const nameFields = ['name', 'employeeName'];
         if (nameFields.includes(fieldKey) && bestMatch.confidence < 80) {
           isMatched = false;
         }
+      } else if (!ocrValue) {
+        confidence = 0;
+        isMatched = false;
+      }
 
-        fieldResults[fieldKey] = {
-          label: fieldConfig.label,
-          ocrValue,
-          matched: isMatched,
-          confidence: bestMatch.confidence,
-          priority: fieldConfig.priority,
-        };
+      fieldResults[fieldKey] = {
+        label: fieldConfig.label,
+        ocrValue: ocrValue || null,
+        matched: isMatched,
+        confidence,
+        priority: fieldConfig.priority,
+      };
 
-        if (fieldConfig.priority === 'high') {
-          highPriorityFields++;
-          if (bestMatch.matched) highPriorityMatches++;
-        }
+      if (fieldConfig.priority === 'high') {
+        highPriorityFields++;
+        if (isMatched) highPriorityMatches++;
       }
     }
   });
@@ -342,15 +350,13 @@ const validateMultipleDocuments = (documentsData, userData) => {
 
   criticalFieldsToCheck.forEach(({ field: fieldName, label, severity, mapsToName }) => {
     const extractedValues = {};
+    const missingDocIds = [];
 
     Object.entries(documentsData).forEach(([docId, { documentType }]) => {
       const result = validations[docId];
 
       let field = result.fieldResults[fieldName];
 
-      // If this field maps to name and wasn't found directly, check if another
-      // doc's name-like field was populated (e.g., employeeName from salary slip
-      // should match against name from PAN card)
       if (!field?.ocrValue && mapsToName) {
         field = result.fieldResults['name'] || result.fieldResults['employeeName'];
       }
@@ -361,16 +367,30 @@ const validateMultipleDocuments = (documentsData, userData) => {
           extractedValues[value] = [];
         }
         extractedValues[value].push(docId);
+      } else {
+        missingDocIds.push(docId);
       }
     });
 
-    // Report inconsistency if multiple values found
     if (Object.keys(extractedValues).length > 1) {
       crossDocumentIssues.push({
         field: fieldName,
         severity,
         message: `Different ${label} values found across documents`,
         details: extractedValues,
+      });
+    }
+
+    if (Object.keys(extractedValues).length === 1 && missingDocIds.length > 0) {
+      const presentDocIds = Object.values(extractedValues).flat();
+      const theValue = Object.keys(extractedValues)[0];
+      const details = { ...extractedValues };
+      details['(not extracted)'] = missingDocIds;
+      crossDocumentIssues.push({
+        field: fieldName,
+        severity: 'MEDIUM',
+        message: `${label} is "${theValue}" in document(s) ${presentDocIds.join(', ')} but missing in document(s) ${missingDocIds.join(', ')}`,
+        details,
       });
     }
   });
