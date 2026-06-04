@@ -188,6 +188,18 @@ const documentTypeConfig = {
         type: 'number',
         priority: 'medium',
       },
+      employeePanNumber: {
+        label: 'Employee PAN',
+        aliases: ['employee_pan_number', 'pan', 'pan_number', 'employeepannumber'],
+        type: 'text',
+        priority: 'low',
+      },
+      earnings: {
+        label: 'Earnings',
+        aliases: ['earnings'],
+        type: 'array',
+        priority: 'medium',
+      },
       allowances: {
         label: 'Allowances',
         aliases: ['allowances', 'allowance'],
@@ -196,21 +208,27 @@ const documentTypeConfig = {
       },
       deductions: {
         label: 'Deductions',
-        aliases: ['deductions', 'deduction'],
-        type: 'number',
-        priority: 'low',
+        aliases: ['deductions'],
+        type: 'array',
+        priority: 'medium',
       },
-      netSalary: {
-        label: 'Net Salary',
-        aliases: ['net_salary', 'net', 'netsalary'],
+      totalEarnings: {
+        label: 'Total Earnings',
+        aliases: ['total_earnings', 'gross_pay', 'totalearnings', 'grossSalary'],
         type: 'number',
         priority: 'medium',
       },
-      employeePanNumber: {
-        label: 'Employee PAN',
-        aliases: ['employee_pan_number', 'pan', 'pan_number', 'employeepannumber'],
-        type: 'text',
-        priority: 'low',
+      totalDeductions: {
+        label: 'Total Deductions',
+        aliases: ['total_deductions', 'total_deduction', 'totaldeductions'],
+        type: 'number',
+        priority: 'medium',
+      },
+      netSalary: {
+        label: 'Net Salary',
+        aliases: ['net_salary', 'net', 'netsalary', 'take_home'],
+        type: 'number',
+        priority: 'medium',
       },
     },
   },

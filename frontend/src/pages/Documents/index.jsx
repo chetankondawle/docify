@@ -531,18 +531,120 @@ const DocumentsPage = () => {
                     </div>
                     <div className={styles.ocrData}>
                       {Object.keys(ocrResults[doc.id].extractedData).length > 0 ? (
-                        <div className={styles.dataGrid}>
-                          {Object.entries(ocrResults[doc.id].extractedData).map(([key, value]) => (
-                            <div key={key} className={styles.dataItem}>
-                              <span className={styles.dataKey}>{key}:</span>
-                              <span className={styles.dataValue}>
-                                {typeof value === 'object'
-                                  ? JSON.stringify(value, null, 2)
-                                  : String(value)}
-                              </span>
+                        ocrResults[doc.id].documentType === 'SALARY_SLIP' &&
+                        (Array.isArray(ocrResults[doc.id].extractedData.earnings) ||
+                         Array.isArray(ocrResults[doc.id].extractedData.deductions)) ? (
+                          <div className={styles.salarySlip}>
+                            {ocrResults[doc.id].extractedData.employeeName && (
+                              <div className={styles.salaryInfoRow}>
+                                <span className={styles.salaryInfoLabel}>Employee:</span>
+                                <span className={styles.salaryInfoValue}>{ocrResults[doc.id].extractedData.employeeName}</span>
+                              </div>
+                            )}
+                            {ocrResults[doc.id].extractedData.employeeId && (
+                              <div className={styles.salaryInfoRow}>
+                                <span className={styles.salaryInfoLabel}>Employee ID:</span>
+                                <span className={styles.salaryInfoValue}>{ocrResults[doc.id].extractedData.employeeId}</span>
+                              </div>
+                            )}
+                            {ocrResults[doc.id].extractedData.monthYear && (
+                              <div className={styles.salaryInfoRow}>
+                                <span className={styles.salaryInfoLabel}>Period:</span>
+                                <span className={styles.salaryInfoValue}>{ocrResults[doc.id].extractedData.monthYear}</span>
+                              </div>
+                            )}
+
+                            {Array.isArray(ocrResults[doc.id].extractedData.earnings) && (
+                              <div className={styles.salaryTableSection}>
+                                <h4 className={styles.salaryTableTitle}>Earnings</h4>
+                                <table className={styles.salaryTable}>
+                                  <thead>
+                                    <tr>
+                                      <th className={styles.salaryThLeft}>Component</th>
+                                      <th className={styles.salaryThRight}>Amount</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {ocrResults[doc.id].extractedData.earnings.map((item, i) => (
+                                      <tr key={i}>
+                                        <td className={styles.salaryTdLeft}>{item.component}</td>
+                                        <td className={styles.salaryTdRight}>{typeof item.amount === 'number' ? item.amount.toLocaleString() : item.amount}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+
+                            {Array.isArray(ocrResults[doc.id].extractedData.deductions) && (
+                              <div className={styles.salaryTableSection}>
+                                <h4 className={styles.salaryTableTitle}>Deductions</h4>
+                                <table className={styles.salaryTable}>
+                                  <thead>
+                                    <tr>
+                                      <th className={styles.salaryThLeft}>Component</th>
+                                      <th className={styles.salaryThRight}>Amount</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {ocrResults[doc.id].extractedData.deductions.map((item, i) => (
+                                      <tr key={i}>
+                                        <td className={styles.salaryTdLeft}>{item.component}</td>
+                                        <td className={styles.salaryTdRight}>{typeof item.amount === 'number' ? item.amount.toLocaleString() : item.amount}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+
+                            <div className={styles.salaryTotals}>
+                              {ocrResults[doc.id].extractedData.totalEarnings != null && (
+                                <div className={styles.salaryTotalRow}>
+                                  <span className={styles.salaryTotalLabel}>Total Earnings</span>
+                                  <span className={styles.salaryTotalValue}>
+                                    {typeof ocrResults[doc.id].extractedData.totalEarnings === 'number'
+                                      ? ocrResults[doc.id].extractedData.totalEarnings.toLocaleString()
+                                      : ocrResults[doc.id].extractedData.totalEarnings}
+                                  </span>
+                                </div>
+                              )}
+                              {ocrResults[doc.id].extractedData.totalDeductions != null && (
+                                <div className={styles.salaryTotalRow}>
+                                  <span className={styles.salaryTotalLabel}>Total Deductions</span>
+                                  <span className={styles.salaryTotalValue}>
+                                    {typeof ocrResults[doc.id].extractedData.totalDeductions === 'number'
+                                      ? ocrResults[doc.id].extractedData.totalDeductions.toLocaleString()
+                                      : ocrResults[doc.id].extractedData.totalDeductions}
+                                  </span>
+                                </div>
+                              )}
+                              {ocrResults[doc.id].extractedData.netSalary != null && (
+                                <div className={`${styles.salaryTotalRow} ${styles.salaryNetRow}`}>
+                                  <span className={styles.salaryTotalLabel}>Net Salary</span>
+                                  <span className={styles.salaryTotalValue}>
+                                    {typeof ocrResults[doc.id].extractedData.netSalary === 'number'
+                                      ? ocrResults[doc.id].extractedData.netSalary.toLocaleString()
+                                      : ocrResults[doc.id].extractedData.netSalary}
+                                  </span>
+                                </div>
+                              )}
                             </div>
-                          ))}
-                        </div>
+                          </div>
+                        ) : (
+                          <div className={styles.dataGrid}>
+                            {Object.entries(ocrResults[doc.id].extractedData).map(([key, value]) => (
+                              <div key={key} className={styles.dataItem}>
+                                <span className={styles.dataKey}>{key}:</span>
+                                <span className={styles.dataValue}>
+                                  {typeof value === 'object'
+                                    ? JSON.stringify(value, null, 2)
+                                    : String(value)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )
                       ) : (
                         <p className={styles.noData}>No meaningful data extracted</p>
                       )}

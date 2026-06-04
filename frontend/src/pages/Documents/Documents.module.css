@@ -2038,3 +2038,145 @@
   font-size: 0.9rem;
   color: #64748b;
 }
+
+/* ========================================
+   SALARY SLIP / PAYSLIP TABLE STYLES
+   ======================================== */
+
+.salarySlip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.salaryInfoRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.375rem 0;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 0.8125rem;
+}
+
+.salaryInfoLabel {
+  font-weight: 600;
+  color: #475569;
+}
+
+.salaryInfoValue {
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.salaryTableSection {
+  margin-top: 0.25rem;
+}
+
+.salaryTableTitle {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.5rem 0;
+  padding-bottom: 0.375rem;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.salaryTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.salaryTable thead {
+  background-color: #f1f5f9;
+}
+
+.salaryThLeft {
+  text-align: left;
+  padding: 0.5rem 0.625rem;
+  font-weight: 600;
+  color: #475569;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  border-bottom: 2px solid #cbd5e1;
+}
+
+.salaryThRight {
+  text-align: right;
+  padding: 0.5rem 0.625rem;
+  font-weight: 600;
+  color: #475569;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  border-bottom: 2px solid #cbd5e1;
+}
+
+.salaryTdLeft {
+  text-align: left;
+  padding: 0.4375rem 0.625rem;
+  color: #334155;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.salaryTdRight {
+  text-align: right;
+  padding: 0.4375rem 0.625rem;
+  color: #1e293b;
+  font-weight: 500;
+  font-family: ui-monospace, monospace;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.salaryTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.salaryTable tbody tr:hover {
+  background-color: #f8fafc;
+}
+
+.salaryTotals {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 2px solid #cbd5e1;
+}
+
+.salaryTotalRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.375rem 0;
+  font-size: 0.8125rem;
+}
+
+.salaryTotalLabel {
+  font-weight: 600;
+  color: #475569;
+}
+
+.salaryTotalValue {
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+  color: #334155;
+}
+
+.salaryNetRow {
+  margin-top: 0.25rem;
+  padding-top: 0.5rem;
+  border-top: 2px solid #94a3b8;
+}
+
+.salaryNetRow .salaryTotalLabel {
+  color: #1e293b;
+  font-size: 0.875rem;
+}
+
+.salaryNetRow .salaryTotalValue {
+  color: #059669;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}

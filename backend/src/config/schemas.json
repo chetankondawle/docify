@@ -35,11 +35,22 @@
       "employeeName": "string",
       "employeeId": "string",
       "monthYear": "string (e.g., Month YYYY)",
-      "basicSalary": "number",
-      "allowances": "number",
-      "deductions": "number",
-      "netSalary": "number",
-      "employeePanNumber": "string"
+      "employeePanNumber": "string",
+      "earnings": [
+        {
+          "component": "string (e.g., Basic Salary, HRA, Conveyance Allowance, Special Allowance, Medical Allowance, LTA, Bonus, etc.)",
+          "amount": "number"
+        }
+      ],
+      "deductions": [
+        {
+          "component": "string (e.g., PF, Professional Tax, TDS/Income Tax, ESI, Insurance, Loan Repayment, etc.)",
+          "amount": "number"
+        }
+      ],
+      "totalEarnings": "number",
+      "totalDeductions": "number",
+      "netSalary": "number"
     }
   }
 }
