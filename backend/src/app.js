@@ -11,12 +11,12 @@ const notFound = require('./middleware/notFound');
 
 const app = express();
 
-const uploadsDir = path.join(__dirname, 'uploads');
+const uploadsDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: false }));
 
 app.use(
   cors({

@@ -10,7 +10,7 @@ const HomePage = () => {
   return (
     <div className={styles.page}>
       <section className={styles.hero}>
-        <h1 className={styles.title}>Welcome to Docify</h1>
+        <h1 className={styles.title}>Welcome to TruExtract</h1>
         <p className={styles.subtitle}>
           A modern full-stack application with Express MVC backend and enterprise React frontend.
         </p>

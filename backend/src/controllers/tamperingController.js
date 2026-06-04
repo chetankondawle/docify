@@ -38,7 +38,7 @@ const checkPDFTampering = asyncHandler(async (req, res) => {
     logger.info(`Running tampering check for document ID: ${id}`);
 
     // Run tampering check
-    const tamperingResult = await tamperingService.checkPDFTampering(document.path);
+    const tamperingResult = await tamperingService.checkPDFTampering(document.path, document.documentType);
 
     // Update document with tampering check results
     documentService.updatePDFTamperingResults(id, tamperingResult);
@@ -52,6 +52,7 @@ const checkPDFTampering = asyncHandler(async (req, res) => {
       riskLevel: tamperingResult.riskLevel,
       checks: tamperingResult.checks,
       summary: tamperingResult.summary,
+      referenceComparison: tamperingResult.referenceComparison,
       cached: false,
     }, 'PDF tampering check completed successfully');
 
@@ -99,7 +100,7 @@ const checkImageTampering = asyncHandler(async (req, res) => {
     logger.info(`Running image tampering check for document ID: ${id}`);
 
     // Primary check: heuristic + EXIF + ELA
-    const tamperingResult = await tamperingService.checkImageTampering(document.path, document.mimetype);
+    const tamperingResult = await tamperingService.checkImageTampering(document.path, document.mimetype, document.documentType);
 
     // Secondary check: Gemini forensic clarification
     let aiAnalysis = null;
@@ -115,7 +116,7 @@ const checkImageTampering = asyncHandler(async (req, res) => {
     }
 
     // Combine: heuristic stays primary; Gemini overrides 'safe' if it strongly disagrees
-    const aiTampered = aiAnalysis && aiAnalysis.verdict === 'likely_tampered';
+    const aiTampered = aiAnalysis && (aiAnalysis.verdict === 'likely_tampered' || aiAnalysis.verdict === 'ai_generated');
     const aiSuspicious = aiAnalysis && aiAnalysis.verdict === 'suspicious';
     const finalSafe = tamperingResult.safe && !aiTampered && !(aiSuspicious && aiAnalysis.confidence === 'high');
 
@@ -137,6 +138,7 @@ const checkImageTampering = asyncHandler(async (req, res) => {
       format: tamperingResult.format,
       checks: tamperingResult.checks,
       aiAnalysis,
+      referenceComparison: tamperingResult.referenceComparison,
       summary: tamperingResult.summary,
       cached: false,
     }, 'Image tampering check completed successfully');

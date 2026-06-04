@@ -1,6 +1,25 @@
 const fs = require('fs');
 const path = require('path');
 
+const REFERENCE_BASE = path.join(__dirname, '../../references');
+
+/**
+ * Get reference sample file paths for a given document type
+ * @param {string} documentType - e.g. 'AADHAAR_CARD'
+ * @returns {string[]} Array of file paths, newest first. Empty if no references exist.
+ */
+const getReferenceFiles = (documentType) => {
+  if (!documentType) return [];
+  const refDir = path.join(REFERENCE_BASE, documentType);
+  if (!fs.existsSync(refDir)) return [];
+  const files = fs.readdirSync(refDir)
+    .filter(f => /\.(jpg|jpeg|png|tiff|tif|webp|pdf)$/i.test(f))
+    .map(f => path.join(refDir, f));
+  // Sort newest first
+  files.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+  return files;
+};
+
 /**
  * Delete a file from the filesystem
  * @param {string} filePath - Absolute or relative path to the file
@@ -56,4 +75,5 @@ module.exports = {
   getFileExtension,
   getFileCategory,
   formatFileSize,
+  getReferenceFiles,
 };
