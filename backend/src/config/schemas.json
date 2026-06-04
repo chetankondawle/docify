@@ -4,9 +4,16 @@
     "schema": {
       "name": "string",
       "gender": "string",
-      "dateOfBirth": "string (YYYY-MM-DD)",
-      "aadhaarNumber": "string",
+      "dateOfBirth": "date (YYYY-MM-DD)",
+      "aadhaarNumber": "string (format: AADHAAR)",
       "address": "string"
+    },
+    "constraints": {
+      "required": ["name", "aadhaarNumber", "dateOfBirth"],
+      "formatValidations": {
+        "aadhaarNumber": "AADHAAR",
+        "dateOfBirth": "date"
+      }
     }
   },
   "PAN_CARD": {
@@ -14,8 +21,15 @@
     "schema": {
       "name": "string",
       "fatherName": "string",
-      "dateOfBirth": "string (YYYY-MM-DD)",
-      "panNumber": "string"
+      "dateOfBirth": "date (YYYY-MM-DD)",
+      "panNumber": "string (format: PAN)"
+    },
+    "constraints": {
+      "required": ["name", "panNumber", "dateOfBirth"],
+      "formatValidations": {
+        "panNumber": "PAN",
+        "dateOfBirth": "date"
+      }
     }
   },
   "PASSPORT": {
@@ -23,10 +37,19 @@
     "schema": {
       "name": "string",
       "gender": "string",
-      "dateOfBirth": "string (YYYY-MM-DD)",
-      "dateOfIssue": "string (YYYY-MM-DD)",
-      "dateOfExpiry": "string (YYYY-MM-DD)",
-      "passportNumber": "string"
+      "dateOfBirth": "date (YYYY-MM-DD)",
+      "dateOfIssue": "date (YYYY-MM-DD)",
+      "dateOfExpiry": "date (YYYY-MM-DD)",
+      "passportNumber": "string (format: PASSPORT)"
+    },
+    "constraints": {
+      "required": ["name", "passportNumber", "dateOfBirth"],
+      "formatValidations": {
+        "passportNumber": "PASSPORT",
+        "dateOfBirth": "date",
+        "dateOfIssue": "date",
+        "dateOfExpiry": "date"
+      }
     }
   },
   "SALARY_SLIP": {
@@ -49,8 +72,19 @@
         }
       ],
       "totalEarnings": "number",
-      "totalDeductions": "number",
-      "netSalary": "number"
+      "totalDeductions": "number",      
+      "basicSalary": "number",
+      "allowances": "number",      
+      "netSalary": "number"    
+    },
+    "constraints": {
+      "required": ["employeeName", "employeeId", "netSalary"],
+      "formatValidations": {
+        "employeePanNumber": "PAN"
+      },
+      "crossField": {
+        "netSalary": "basicSalary + allowances - deductions"
+      }
     }
   }
 }

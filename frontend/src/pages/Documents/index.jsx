@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import FileUpload from '@components/common/FileUpload';
 import Button from '@components/common/Button';
@@ -15,6 +15,25 @@ const DocumentsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
+  const mountedRef = useRef(true);
+  const timersRef = useRef([]);
+
+  const safeTimeout = (fn, ms) => {
+    const id = setTimeout(() => {
+      if (mountedRef.current) fn();
+    }, ms);
+    timersRef.current.push(id);
+    return id;
+  };
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      timersRef.current.forEach(clearTimeout);
+      timersRef.current = [];
+    };
+  }, []);
   
   // OCR states
   const [ocrLoading, setOcrLoading] = useState({});
@@ -83,13 +102,13 @@ const DocumentsPage = () => {
     // Assuming the backend returns the newly created document object, including its assigned type.
     // The document object should ideally have a 'documentType' field now.
     setSuccessMessage(`Document "${document.originalName}" uploaded successfully!`);
-    setTimeout(() => setSuccessMessage(null), 5000);
+    safeTimeout(() => setSuccessMessage(null), 5000);
     fetchDocuments(); // Refresh list to show the new document with its type
   };
 
   const handleUploadError = (errorMsg) => {
     setError(errorMsg);
-    setTimeout(() => setError(null), 5000);
+    safeTimeout(() => setError(null), 5000);
   };
 
   const handleDelete = async (id, name) => {
@@ -98,11 +117,11 @@ const DocumentsPage = () => {
     try {
       await deleteDocument(id);
       setSuccessMessage('Document deleted successfully');
-      setTimeout(() => setSuccessMessage(null), 5000);
+      safeTimeout(() => setSuccessMessage(null), 5000);
       fetchDocuments();
     } catch (err) {
       setError(err.message || 'Failed to delete document');
-      setTimeout(() => setError(null), 5000);
+      safeTimeout(() => setError(null), 5000);
     }
   };
 
@@ -122,7 +141,7 @@ const DocumentsPage = () => {
     // Check if document has a documentType stored
     if (!document.documentType) {
       setError('Document type not specified. Please re-upload the document with a document type.');
-      setTimeout(() => setError(null), 5000);
+      safeTimeout(() => setError(null), 5000);
       setOcrLoading((prev) => ({ ...prev, [docId]: false }));
       return;
     }
@@ -137,16 +156,17 @@ const DocumentsPage = () => {
           documentType: response.data.documentType,
           extractedData: response.data.extractedData || {},
           model: response.data.model,
+          quality: response.data.quality || null,
         },
       }));
 
       setSuccessMessage(
         `OCR extraction completed for "${docName}" as ${document.documentType}`
       );
-      setTimeout(() => setSuccessMessage(null), 5000);
+      safeTimeout(() => setSuccessMessage(null), 5000);
     } catch (err) {
       setError(err.message || 'OCR extraction failed');
-      setTimeout(() => setError(null), 5000);
+      safeTimeout(() => setError(null), 5000);
     } finally {
       setOcrLoading((prev) => ({ ...prev, [docId]: false }));
     }
@@ -162,7 +182,7 @@ const DocumentsPage = () => {
 
     if (!isImage && !isPdf) {
       setError('Security check is only supported for PDF and image files');
-      setTimeout(() => setError(null), 5000);
+      safeTimeout(() => setError(null), 5000);
       setTamperingLoading((prev) => ({ ...prev, [docId]: false }));
       return;
     }
@@ -191,10 +211,10 @@ const DocumentsPage = () => {
           response.data.cached ? ' (cached)' : ''
         }`
       );
-      setTimeout(() => setSuccessMessage(null), 5000);
+      safeTimeout(() => setSuccessMessage(null), 5000);
     } catch (err) {
       setError(err.message || 'Security check failed');
-      setTimeout(() => setError(null), 5000);
+      safeTimeout(() => setError(null), 5000);
     } finally {
       setTamperingLoading((prev) => ({ ...prev, [docId]: false }));
     }
@@ -241,7 +261,7 @@ const DocumentsPage = () => {
       setSuccessMessage(
         `✓ Validation completed for "${docName}"`
       );
-      setTimeout(() => setSuccessMessage(null), 5000);
+      safeTimeout(() => setSuccessMessage(null), 5000);
 
       return { success: true };
     } catch (err) {
@@ -292,7 +312,7 @@ const DocumentsPage = () => {
 
       setCrossValidationSuccess(true);
       // Auto-hide success message after 5 seconds
-      setTimeout(() => setCrossValidationSuccess(false), 5000);
+      safeTimeout(() => setCrossValidationSuccess(false), 5000);
     } catch (err) {
       setCrossValidationError(err.message || 'Cross-validation failed. Please try again.');
     } finally {
@@ -345,17 +365,7 @@ const DocumentsPage = () => {
         </div>
       )}
 
-      {successMessage && (
-        <div className={styles.alert} data-type="success">
-          {successMessage}
-        </div>
-      )}
-
-      {error && (
-        <div className={styles.alert} data-type="error">
-          {error}
-        </div>
-      )}
+      
 
       {/* --- Upload Section with Document Type Selector --- */}
       <div className={styles.uploadSection}>
@@ -404,6 +414,7 @@ const DocumentsPage = () => {
               {documents.length} document{documents.length !== 1 ? 's' : ''} uploaded
             </p>
           </div>
+
 
           {documents.length > 1 && (
             <div className={styles.crossValidateContainer}>
@@ -489,7 +500,7 @@ const DocumentsPage = () => {
 
                 <div className={styles.cardActions}>
                   <a
-                    href={`http://localhost:5000/uploads/${doc.filename}`}
+                    href={`${import.meta.env.VITE_API_BASE_URL?.replace('/api/v1', '') || 'http://localhost:5000'}/uploads/${doc.filename}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className={styles.viewLink}
@@ -810,8 +821,19 @@ const DocumentsPage = () => {
               </div>
             ))}
           </div>
-        )}
 
+        )}
+{successMessage && (
+        <div className={styles.alert} data-type="success">
+          {successMessage}
+        </div>
+      )}
+
+      {error && (
+        <div className={styles.alert} data-type="error">
+          {error}
+        </div>
+      )}
 
         {/* Cross-Validation Results Section */}
         {validationResults.__crossValidation__ && (

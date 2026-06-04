@@ -3,6 +3,7 @@ const helmet = require('helmet');
 const cors = require('cors');
 const morgan = require('morgan');
 const path = require('path');
+const fs = require('fs');
 const config = require('./config');
 const routes = require('./routes');
 const errorHandler = require('./middleware/errorHandler');
@@ -10,10 +11,13 @@ const notFound = require('./middleware/notFound');
 
 const app = express();
 
-// Security headers
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
 app.use(helmet());
 
-// CORS
 app.use(
   cors({
     origin: config.server.allowedOrigins,
@@ -21,25 +25,29 @@ app.use(
   })
 );
 
-// Body parsing
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: config.upload.maxBodySize }));
+app.use(express.urlencoded({ extended: true, limit: config.upload.maxBodySize }));
 
-// HTTP request logging
 if (config.server.env !== 'test') {
   app.use(morgan('dev'));
 }
 
-// Serve static files (uploaded documents)
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use('/uploads', express.static(uploadsDir));
 
-// API Routes
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    env: config.server.env,
+    geminiConfigured: !!config.gemini.apiKey,
+    uploadDirExists: fs.existsSync(uploadsDir),
+  });
+});
+
 app.use('/api', routes);
 
-// 404 handler
 app.use(notFound);
 
-// Global error handler
 app.use(errorHandler);
 
 module.exports = app;

@@ -3,20 +3,17 @@ const router = express.Router();
 const {
   extractOCR,
   extractStructured,
-  getDocumentTypes, // Import the new controller function
+  getDocumentTypes,
   batchExtractOCR
 } = require('../../controllers/ocrController');
+const { ocrLimiter } = require('../../middleware/rateLimiter');
 
-// Get list of available document types
-router.get('/documentTypes', getDocumentTypes); // Add the new route
+router.get('/documentTypes', getDocumentTypes);
 
-// Extract OCR from a single document
-router.post('/extract/:id', extractOCR);
+router.post('/extract/:id', ocrLimiter, extractOCR);
 
-// Extract structured data based on document type
-router.post('/structured/:id', extractStructured);
+router.post('/structured/:id', ocrLimiter, extractStructured);
 
-// Batch OCR extraction
-router.post('/batch', batchExtractOCR);
+router.post('/batch', ocrLimiter, batchExtractOCR);
 
 module.exports = router;

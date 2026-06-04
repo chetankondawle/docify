@@ -6,19 +6,16 @@ const {
   getDocument,
   deleteDocument,
 } = require('../../controllers/documentController');
+const { uploadLimiter, defaultLimiter } = require('../../middleware/rateLimiter');
 
 const router = express.Router();
 
-// Upload single document
-router.post('/upload', upload.single('document'), uploadDocument);
+router.post('/upload', uploadLimiter, upload.single('document'), uploadDocument);
 
-// Get all documents
-router.get('/', getDocuments);
+router.get('/', defaultLimiter, getDocuments);
 
-// Get single document
-router.get('/:id', getDocument);
+router.get('/:id', defaultLimiter, getDocument);
 
-// Delete document
-router.delete('/:id', deleteDocument);
+router.delete('/:id', defaultLimiter, deleteDocument);
 
 module.exports = router;
