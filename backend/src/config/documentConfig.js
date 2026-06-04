@@ -6,6 +6,16 @@
 const documentTypeConfig = {
   AADHAAR_CARD: {
     name: 'Aadhaar Card',
+    formatRules: {
+      aadhaarNumber: {
+        required: true,
+        rules: [
+          { type: 'length', value: 12, message: 'Aadhaar number must be exactly 12 digits' },
+          { type: 'numeric', message: 'Aadhaar number must only contain digits (0-9)' },
+          { type: 'notStartWith', values: ['0', '1'], message: 'Aadhaar number cannot start with 0 or 1' },
+        ],
+      },
+    },
     fields: {
       name: {
         label: 'Full Name',
@@ -49,6 +59,16 @@ const documentTypeConfig = {
 
   PAN_CARD: {
     name: 'PAN Card',
+    formatRules: {
+      panNumber: {
+        required: true,
+        rules: [
+          { type: 'length', value: 10, message: 'PAN must be exactly 10 characters' },
+          { type: 'pattern', value: '^[A-Za-z]{5}[0-9]{4}[A-Za-z]$', message: 'PAN must be 5 letters + 4 digits + 1 letter (e.g., AAAPZ1234C)' },
+          { type: 'notStartWith', values: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'], message: 'PAN must start with a letter' },
+        ],
+      },
+    },
     fields: {
       name: {
         label: 'Full Name',
@@ -84,6 +104,15 @@ const documentTypeConfig = {
 
   PASSPORT: {
     name: 'Passport',
+    formatRules: {
+      passportNumber: {
+        required: true,
+        rules: [
+          { type: 'length', value: 8, message: 'Indian passport number must be exactly 8 characters' },
+          { type: 'pattern', value: '^[A-Za-z][0-9]{7}$', message: 'Passport must start with a letter followed by 7 digits (e.g., J1234567)' },
+        ],
+      },
+    },
     fields: {
       name: {
         label: 'Full Name',
@@ -131,6 +160,7 @@ const documentTypeConfig = {
 
   SALARY_SLIP: {
     name: 'Salary Slip',
+    formatRules: {},
     fields: {
       employeeName: {
         label: 'Employee Name',

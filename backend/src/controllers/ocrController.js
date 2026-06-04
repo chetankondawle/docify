@@ -1,5 +1,6 @@
 const geminiService = require('../services/geminiService');
 const documentService = require('../services/documentService');
+const validationService = require('../services/validationService');
 const { assessImageQuality } = require('../services/imageQualityService');
 const { validateOcrDataQuality } = require('../services/ocrValidationService');
 // Import schemas from JSON file
@@ -51,6 +52,13 @@ const extractOCR = asyncHandler(async (req, res) => {
       model: ocrResult.model,
     });
 
+    // Run format validation on extracted data
+    const formatValidation = validationService.validateDocumentFormat(
+      ocrResult.data.extractedData,
+      ocrResult.data.documentType
+    );
+    documentService.updateDocumentFormatValidation(id, formatValidation);
+
     logger.info(`OCR extraction completed for document ID: ${id}`);
 
     sendSuccess(res, {
@@ -59,6 +67,7 @@ const extractOCR = asyncHandler(async (req, res) => {
       extractedData: ocrResult.data.extractedData,
       confidence: ocrResult.data.confidence,
       model: ocrResult.model,
+      formatValidation,
       cached: false,
     }, 'OCR extraction completed successfully');
 
@@ -168,16 +177,36 @@ const extractStructured = asyncHandler(async (req, res) => {
 
     logger.info(`Structured extraction completed for document ID: ${id}`);
 
+    // Save structured OCR data to document
+    documentService.updateDocumentOCR(id, {
+      data: {
+        documentType,
+        extractedData: result.data,
+        confidence: 'high',
+      },
+      model: result.model,
+    });
+
+    // Run format validation on extracted data
+    const formatValidation = validationService.validateDocumentFormat(
+      result.data,
+      documentType
+    );
+    documentService.updateDocumentFormatValidation(id, formatValidation);
+
     if (typeMismatch) {
       return sendError(res, typeMismatch.message, 400);
     }
 
     sendSuccess(res, {
       documentId: document.id,
+      documentType,
+      extractedData: result.data,
       documentType: documentType,
       detectedDocumentType: detectedType,
       extractedData: extractedFields,
       model: result.model,
+      formatValidation,
       quality: {
         image: imageQuality ? { score: imageQuality.score, quality: imageQuality.quality, issues: imageQuality.issues } : null,
         data: dataQuality ? { score: dataQuality.overallScore, passed: dataQuality.passed, errors: dataQuality.errors, warnings: dataQuality.warnings } : null,

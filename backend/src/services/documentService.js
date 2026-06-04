@@ -29,6 +29,7 @@ const saveDocument = (file, user = null, documentType = null) => {
     ocrData: null, // OCR extracted data (JSON)
     ocrProcessed: false, // OCR processing status
     ocrError: null, // OCR error if any
+    formatValidation: null, // Document format validation results
     pdfTampering: null, // PDF tampering check results
     imageTampering: null, // Image tampering check results
   };
@@ -132,12 +133,33 @@ const updateImageTamperingResults = (id, tamperingResult) => {
   return document;
 };
 
+/**
+ * Update document with format validation results
+ * @param {number} id - Document ID
+ * @param {Object} formatValidation - Format validation result
+ * @returns {Object|null} Updated document or null
+ */
+const updateDocumentFormatValidation = (id, formatValidation) => {
+  const document = getDocumentById(id);
+  if (!document) return null;
+
+  document.formatValidation = {
+    valid: formatValidation.valid,
+    fieldResults: formatValidation.fieldResults,
+    message: formatValidation.message,
+    validatedAt: new Date().toISOString(),
+  };
+
+  return document;
+};
+
 module.exports = {
   saveDocument,
   getAllDocuments,
   getDocumentById,
   deleteDocument,
   updateDocumentOCR,
+  updateDocumentFormatValidation,
   updatePDFTamperingResults,
   updateImageTamperingResults,
 };

@@ -402,9 +402,91 @@ const validateMultipleDocuments = (documentsData, userData) => {
   };
 };
 
+/**
+ * Validate a single field value against a set of format rules
+ */
+const validateFieldFormat = (value, rules) => {
+  const errors = [];
+  if (!value) {
+    return { valid: false, errors: ['Field value is empty or missing'] };
+  }
+
+  const strValue = String(value).trim();
+
+  rules.forEach((rule) => {
+    switch (rule.type) {
+      case 'length':
+        if (strValue.length !== rule.value) {
+          errors.push(rule.message || `Must be exactly ${rule.value} characters`);
+        }
+        break;
+
+      case 'numeric':
+        if (!/^\d+$/.test(strValue)) {
+          errors.push(rule.message || 'Must only contain digits (0-9)');
+        }
+        break;
+
+      case 'notStartWith':
+        const startsWithInvalid = rule.values.some((prefix) => strValue.startsWith(prefix));
+        if (startsWithInvalid) {
+          errors.push(rule.message || `Cannot start with ${rule.values.join(' or ')}`);
+        }
+        break;
+
+      case 'pattern':
+        if (!new RegExp(rule.value).test(strValue)) {
+          errors.push(rule.message || `Must match pattern ${rule.value}`);
+        }
+        break;
+
+      default:
+        break;
+    }
+  });
+
+  return { valid: errors.length === 0, errors };
+};
+
+/**
+ * Validate extracted OCR data against document type format rules
+ */
+const validateDocumentFormat = (extractedData, documentType) => {
+  const config = documentTypeConfig[documentType];
+  if (!config || !config.formatRules) {
+    return { valid: true, fieldResults: {}, message: 'No format rules defined for this document type' };
+  }
+
+  const normalized = normalizeOCRData(extractedData, documentType);
+  const fieldResults = {};
+  let allValid = true;
+
+  Object.entries(config.formatRules).forEach(([fieldKey, formatConfig]) => {
+    const value = normalized[fieldKey];
+    const result = validateFieldFormat(value, formatConfig.rules);
+    fieldResults[fieldKey] = {
+      value: value || null,
+      valid: result.valid,
+      errors: result.errors,
+      required: formatConfig.required || false,
+    };
+    if (!result.valid) {
+      allValid = false;
+    }
+  });
+
+  return {
+    valid: allValid,
+    fieldResults,
+    message: allValid ? 'All format checks passed' : 'Some format checks failed',
+  };
+};
+
 module.exports = {
   normalizeOCRData,
   matchFieldValue,
   validateSingleDocument,
   validateMultipleDocuments,
+  validateFieldFormat,
+  validateDocumentFormat,
 };
