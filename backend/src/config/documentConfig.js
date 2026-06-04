@@ -188,6 +188,18 @@ const documentTypeConfig = {
         type: 'number',
         priority: 'medium',
       },
+      employeePanNumber: {
+        label: 'Employee PAN',
+        aliases: ['employee_pan_number', 'pan', 'pan_number', 'employeepannumber'],
+        type: 'text',
+        priority: 'low',
+      },
+      earnings: {
+        label: 'Earnings',
+        aliases: ['earnings'],
+        type: 'array',
+        priority: 'medium',
+      },
       allowances: {
         label: 'Allowances',
         aliases: ['allowances', 'allowance', 'hra', 'dearness', 'da', 'special allowance', 'other allowances', 'total allowances'],
