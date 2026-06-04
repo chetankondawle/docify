@@ -231,8 +231,6 @@ const matchFieldValue = (ocrValue, userData, strategy = 'exact') => {
         result.confidence = Math.max(result.confidence, charLevelConfidence);
       }
 
-      console.log("Result =======>", result);
-      
       return {
         matched: result.confidence >= 70,
         confidence: parseFloat(result.confidence.toFixed(2)),
@@ -273,9 +271,10 @@ const validateSingleDocument = (extractedData, documentType, userData) => {
           current.confidence > best.confidence ? current : best
         );
 
-        // Special threshold for name field - require 80% confidence
+        // Special threshold for name fields - require 80% confidence
         let isMatched = bestMatch.matched;
-        if (fieldKey === 'name' && bestMatch.confidence < 80) {
+        const nameFields = ['name', 'employeeName'];
+        if (nameFields.includes(fieldKey) && bestMatch.confidence < 80) {
           isMatched = false;
         }
 
@@ -334,20 +333,28 @@ const validateMultipleDocuments = (documentsData, userData) => {
   });
 
   // Check consistency across documents for critical fields
-  const criticalFieldsToCheck = {
-    name: { label: 'Name', severity: 'HIGH' },
-    dateOfBirth: { label: 'Date of Birth', severity: 'HIGH' },
-    dob: { label: 'Date of Birth', severity: 'HIGH' },
-  };
+  const criticalFieldsToCheck = [
+    { field: 'name', label: 'Name', severity: 'HIGH' },
+    { field: 'employeeName', label: 'Employee Name', severity: 'HIGH', mapsToName: true },
+    { field: 'dateOfBirth', label: 'Date of Birth', severity: 'HIGH' },
+    { field: 'dob', label: 'Date of Birth', severity: 'HIGH' },
+  ];
 
-  Object.entries(criticalFieldsToCheck).forEach(([fieldName, fieldConfig]) => {
+  criticalFieldsToCheck.forEach(({ field: fieldName, label, severity, mapsToName }) => {
     const extractedValues = {};
 
     Object.entries(documentsData).forEach(([docId, { documentType }]) => {
       const result = validations[docId];
 
-      // Check both camelCase and snake_case versions
-      const field = result.fieldResults[fieldName];
+      let field = result.fieldResults[fieldName];
+
+      // If this field maps to name and wasn't found directly, check if another
+      // doc's name-like field was populated (e.g., employeeName from salary slip
+      // should match against name from PAN card)
+      if (!field?.ocrValue && mapsToName) {
+        field = result.fieldResults['name'] || result.fieldResults['employeeName'];
+      }
+
       if (field?.ocrValue) {
         const value = String(field.ocrValue).toLowerCase().trim();
         if (!extractedValues[value]) {
@@ -361,8 +368,8 @@ const validateMultipleDocuments = (documentsData, userData) => {
     if (Object.keys(extractedValues).length > 1) {
       crossDocumentIssues.push({
         field: fieldName,
-        severity: fieldConfig.severity,
-        message: `Different ${fieldConfig.label} values found across documents`,
+        severity,
+        message: `Different ${label} values found across documents`,
         details: extractedValues,
       });
     }

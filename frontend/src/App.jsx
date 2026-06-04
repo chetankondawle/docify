@@ -5,18 +5,20 @@ import HomePage from '@pages/Home';
 import UserFormPage from '@pages/UserForm';
 import DocumentsPage from '@pages/Documents';
 import NotFoundPage from '@pages/NotFound';
+import ErrorBoundary from '@components/common/ErrorBoundary';
 
 const App = () => {
   return (
-    <Routes>
-      <Route element={<MainLayout />}>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/user-form" element={<UserFormPage />} />
-        <Route path="/documents" element={<DocumentsPage />} />
-        {/* Add more routes here */}
-      </Route>
-      <Route path="*" element={<NotFoundPage />} />
-    </Routes>
+    <ErrorBoundary>
+      <Routes>
+        <Route element={<MainLayout />}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/user-form" element={<UserFormPage />} />
+          <Route path="/documents" element={<DocumentsPage />} />
+        </Route>
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </ErrorBoundary>
   );
 };
 
