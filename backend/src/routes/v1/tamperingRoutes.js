@@ -1,12 +1,11 @@
 const express = require('express');
 const { checkPDFTampering, checkImageTampering } = require('../../controllers/tamperingController');
+const { ocrLimiter } = require('../../middleware/rateLimiter');
 
 const router = express.Router();
 
-// Check PDF for tampering
-router.post('/check/:id', checkPDFTampering);
+router.post('/check/:id', ocrLimiter, checkPDFTampering);
 
-// Check image for tampering
-router.post('/check-image/:id', checkImageTampering);
+router.post('/check-image/:id', ocrLimiter, checkImageTampering);
 
 module.exports = router;

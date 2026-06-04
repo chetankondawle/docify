@@ -2,43 +2,61 @@ const documentService = require('../services/documentService');
 const { deleteFile } = require('../utils/fileHelpers');
 const { sendSuccess, sendCreated, sendError, sendNotFound, sendBadRequest } = require('../utils/response');
 const asyncHandler = require('../middleware/asyncHandler');
+const { validate } = require('../middleware/validate');
+const logger = require('../utils/logger');
 
-/**
- * @desc    Upload a document (image or PDF)
- * @route   POST /api/v1/documents/upload
- * @access  Public
- */
 const uploadDocument = asyncHandler(async (req, res) => {
   if (!req.file) {
-    return sendBadRequest(res, 'No file uploaded');
+    return sendBadRequest(res, 'No file uploaded. Ensure the field is named "document" and is a valid file.');
   }
 
-  // Get documentType from request body (sent from frontend)
   const { documentType } = req.body;
 
-  const document = documentService.saveDocument(req.file, req.user, documentType);
+  if (documentType) {
+    const typeCheck = validate.documentType(documentType);
+    if (!typeCheck.valid) {
+      try { await deleteFile(req.file.path); } catch {}
+      return sendBadRequest(res, typeCheck.message);
+    }
+  }
 
-  sendCreated(res, document, 'Document uploaded successfully');
+  const document = documentService.saveDocument(req.file, req.user, documentType || null);
+
+  sendCreated(res, {
+    id: document.id,
+    originalName: document.originalName,
+    filename: document.filename,
+    mimetype: document.mimetype,
+    size: document.size,
+    sizeFormatted: document.sizeFormatted,
+    category: document.category,
+    documentType: document.documentType,
+    uploadedAt: document.uploadedAt,
+  }, 'Document uploaded successfully');
 });
 
-/**
- * @desc    Get all documents
- * @route   GET /api/v1/documents
- * @access  Public
- */
 const getDocuments = asyncHandler(async (req, res) => {
   const documents = documentService.getAllDocuments();
-  sendSuccess(res, documents, 'Documents retrieved successfully');
+  const sanitized = documents.map(doc => ({
+    id: doc.id,
+    originalName: doc.originalName,
+    filename: doc.filename,
+    mimetype: doc.mimetype,
+    size: doc.size,
+    sizeFormatted: doc.sizeFormatted,
+    category: doc.category,
+    documentType: doc.documentType,
+    uploadedAt: doc.uploadedAt,
+    ocrProcessed: doc.ocrProcessed,
+  }));
+  sendSuccess(res, sanitized, 'Documents retrieved successfully');
 });
 
-/**
- * @desc    Get single document by ID
- * @route   GET /api/v1/documents/:id
- * @access  Public
- */
 const getDocument = asyncHandler(async (req, res) => {
+  const idCheck = validate.documentId(req.params.id);
+  if (!idCheck.valid) return sendBadRequest(res, idCheck.message);
+
   const document = documentService.getDocumentById(req.params.id);
-  
   if (!document) {
     return sendNotFound(res, 'Document not found');
   }
@@ -46,26 +64,21 @@ const getDocument = asyncHandler(async (req, res) => {
   sendSuccess(res, document, 'Document retrieved successfully');
 });
 
-/**
- * @desc    Delete document by ID
- * @route   DELETE /api/v1/documents/:id
- * @access  Public
- */
 const deleteDocument = asyncHandler(async (req, res) => {
+  const idCheck = validate.documentId(req.params.id);
+  if (!idCheck.valid) return sendBadRequest(res, idCheck.message);
+
   const document = documentService.getDocumentById(req.params.id);
-  
   if (!document) {
     return sendNotFound(res, 'Document not found');
   }
 
-  // Delete from filesystem
   try {
     await deleteFile(document.path);
   } catch (error) {
-    return sendError(res, 'Failed to delete file from storage', 500);
+    logger.warn(`File deletion failed for ${document.path}: ${error.message}. Proceeding with record deletion.`);
   }
 
-  // Delete from service (in-memory or DB)
   documentService.deleteDocument(req.params.id);
 
   sendSuccess(res, null, 'Document deleted successfully');

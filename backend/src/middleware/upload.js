@@ -1,14 +1,13 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const config = require('../config');
 
-// Ensure uploads directory exists
 const uploadDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// Allowed file types
 const ALLOWED_TYPES = {
   'image/jpeg': ['.jpg', '.jpeg'],
   'image/png': ['.png'],
@@ -17,10 +16,8 @@ const ALLOWED_TYPES = {
   'application/pdf': ['.pdf'],
 };
 
-// Max file size: 10MB
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_FILE_SIZE = config.upload.maxFileSize;
 
-// Configure storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadDir);
@@ -33,34 +30,31 @@ const storage = multer.diskStorage({
   },
 });
 
-// File filter
 const fileFilter = (req, file, cb) => {
+  if (!file || !file.mimetype) {
+    return cb(new Error('File or MIME type is missing'), false);
+  }
+
   const allowedExtensions = ALLOWED_TYPES[file.mimetype];
-  
   if (!allowedExtensions) {
     return cb(
-      new Error(
-        `Invalid file type. Allowed types: ${Object.keys(ALLOWED_TYPES).join(', ')}`
-      ),
+      new Error(`Unsupported file type "${file.mimetype}". Allowed: ${Object.keys(ALLOWED_TYPES).join(', ')}`),
       false
     );
   }
 
   const ext = path.extname(file.originalname).toLowerCase();
   if (!allowedExtensions.includes(ext)) {
-    return cb(new Error(`Invalid file extension: ${ext}`), false);
+    return cb(new Error(`File extension "${ext}" does not match MIME type "${file.mimetype}"`), false);
   }
 
   cb(null, true);
 };
 
-// Create multer instance
 const upload = multer({
   storage,
   fileFilter,
-  limits: {
-    fileSize: MAX_FILE_SIZE,
-  },
+  limits: { fileSize: MAX_FILE_SIZE },
 });
 
 module.exports = upload;

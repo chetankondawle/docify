@@ -1,8 +1,11 @@
 const geminiService = require('../services/geminiService');
 const documentService = require('../services/documentService');
 const validationService = require('../services/validationService');
+const { assessImageQuality } = require('../services/imageQualityService');
+const { validateOcrDataQuality } = require('../services/ocrValidationService');
 // Import schemas from JSON file
 const schemas = require('../config/schemas.json'); 
+const { isDocTypeMismatch } = require('../utils/docTypeMapping');
 const { sendSuccess, sendError, sendNotFound, sendBadRequest } = require('../utils/response');
 const asyncHandler = require('../middleware/asyncHandler');
 const logger = require('../utils/logger');
@@ -135,12 +138,42 @@ const extractStructured = asyncHandler(async (req, res) => {
   try {
     logger.info(`Starting structured data extraction for document ID: ${id} of type: ${documentType}`);
 
+    // Pre-OCR: assess image quality for images
+    let imageQuality = null;
+    if (document.mimetype && document.mimetype.startsWith('image/')) {
+      imageQuality = await assessImageQuality(document.path, document.mimetype);
+      if (!imageQuality.pass) {
+        logger.warn(`Image quality check failed for doc ${id}: ${imageQuality.message}`);
+      }
+    }
+
     // Pass the schema definition to the service
     const result = await geminiService.extractStructuredData(
       document.path,
       document.mimetype,
-      schemaConfig.schema // Pass the actual schema object
+      schemaConfig.schema
     );
+
+    // Detect document type mismatch
+    const detectedType = result.data?.detectedDocumentType;
+    let typeMismatch = null;
+    if (detectedType && detectedType !== 'unknown') {
+      const check = isDocTypeMismatch(documentType, detectedType);
+      if (check.mismatch) {
+        typeMismatch = check;
+        logger.warn(`Document type mismatch for doc ${id}: selected=${documentType}, detected=${detectedType}`);
+      }
+    }
+
+    // Post-OCR: validate extracted data quality against schema
+    let dataQuality = null;
+    const extractedFields = result.data?.extractedData || {};
+    if (Object.keys(extractedFields).length > 0 && !result.data?.parseError) {
+      dataQuality = validateOcrDataQuality(
+        { documentType, extractedData: extractedFields, confidence: result.data?.confidence || 'high' },
+        documentType
+      );
+    }
 
     logger.info(`Structured extraction completed for document ID: ${id}`);
 
@@ -161,12 +194,23 @@ const extractStructured = asyncHandler(async (req, res) => {
     );
     documentService.updateDocumentFormatValidation(id, formatValidation);
 
+    if (typeMismatch) {
+      return sendError(res, typeMismatch.message, 400);
+    }
+
     sendSuccess(res, {
       documentId: document.id,
       documentType,
       extractedData: result.data,
+      documentType: documentType,
+      detectedDocumentType: detectedType,
+      extractedData: extractedFields,
       model: result.model,
       formatValidation,
+      quality: {
+        image: imageQuality ? { score: imageQuality.score, quality: imageQuality.quality, issues: imageQuality.issues } : null,
+        data: dataQuality ? { score: dataQuality.overallScore, passed: dataQuality.passed, errors: dataQuality.errors, warnings: dataQuality.warnings } : null,
+      },
     }, 'Structured data extraction completed');
 
   } catch (error) {

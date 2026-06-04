@@ -1,17 +1,18 @@
 const logger = require('../utils/logger');
+const config = (() => { try { return require('../config'); } catch { return null; } })();
 
-// eslint-disable-next-line no-unused-vars
 const errorHandler = (err, req, res, next) => {
-  const statusCode = err.statusCode || err.status || 500;
-  const message = err.message || 'Internal Server Error';
+  const safeErr = err || {};
+  const statusCode = safeErr.statusCode || safeErr.status || 500;
+  const message = safeErr.message || 'Internal Server Error';
 
-  logger.error(`[${req.method}] ${req.path} >> StatusCode: ${statusCode}, Message: ${message}`);
+  logger.error(`[${req.method}] ${req.path} >> ${statusCode}: ${message}`);
 
-  if (process.env.NODE_ENV === 'development') {
+  if (config?.server?.env === 'development') {
     return res.status(statusCode).json({
       success: false,
       message,
-      stack: err.stack,
+      stack: safeErr.stack,
     });
   }
 
