@@ -1,5 +1,5 @@
 const fs = require('fs');
-const pdfParse = require('pdf-parse');
+const { PDFParse } = require('pdf-parse');
 const logger = require('../utils/logger');
 
 /**
@@ -15,7 +15,7 @@ const checkPDFTampering = async (filePath) => {
     const checks = {
       digitalSignature: checkDigitalSignature(pdfContent),
       incrementalUpdates: checkIncrementalUpdates(pdfContent),
-      metadataConsistency: await checkMetadataConsistency(dataBuffer),
+      metadataConsistency: await checkMetadataConsistency(filePath),
       embeddedFiles: checkEmbeddedFiles(pdfContent),
       javaScriptDetection: checkJavaScript(pdfContent),
       eofValidation: checkEOFMarker(pdfContent),
@@ -79,19 +79,19 @@ const checkIncrementalUpdates = (content) => {
 /**
  * Check metadata consistency
  */
-const checkMetadataConsistency = async (dataBuffer) => {
+const checkMetadataConsistency = async (filePath) => {
   try {
-    const data = await pdfParse(dataBuffer);
-    const creationDate = extractDate(data.info.CreationDate);
-    const modDate = extractDate(data.info.ModDate);
-
+    const data = new PDFParse({url:filePath});
+    const info = await data.getInfo();
+    const creationDate = extractDate(info.info.CreationDate);
+    const modDate = extractDate(info.info.ModDate);
     const inconsistent = modDate && creationDate && modDate < creationDate;
 
     return {
       passed: !inconsistent,
-      creationDate: data.info.CreationDate || 'Unknown',
-      modificationDate: data.info.ModDate || 'Unknown',
-      producer: data.info.Producer || 'Unknown',
+      creationDate: creationDate.toISOString() || 'Unknown',
+      modificationDate: modDate.toISOString() || 'Unknown',
+      producer: info.info.Producer || 'Unknown',
       inconsistent,
       message: inconsistent
         ? 'Modification date before creation date (suspicious)'
