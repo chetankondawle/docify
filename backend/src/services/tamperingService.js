@@ -1,15 +1,17 @@
 const fs = require('fs');
 const { PDFParse } = require('pdf-parse');
-const ExifParser = require('exif-parser');
+const { ExifTool } = require('exiftool-vendored');
 const sharp = require('sharp');
 const logger = require('../utils/logger');
+const geminiService = require('./geminiService');
+const { getReferenceFiles } = require('../utils/fileHelpers');
 
 /**
  * Perform comprehensive PDF tampering checks
  * @param {string} filePath - Path to PDF file
  * @returns {Promise<Object>} - Tampering check results
  */
-const checkPDFTampering = async (filePath) => {
+const checkPDFTampering = async (filePath, documentType = null) => {
   try {
     const dataBuffer = fs.readFileSync(filePath);
     const pdfContent = dataBuffer.toString('latin1');
@@ -27,16 +29,27 @@ const checkPDFTampering = async (filePath) => {
       fontSubstitution: checkFontSubstitution(pdfContent),
     };
 
-    // Calculate overall risk score
     const riskScore = calculateRiskScore(checks);
 
-    return {
+    const result = {
       safe: riskScore < 30,
       riskScore,
       riskLevel: getRiskLevel(riskScore),
       checks,
       summary: generateSummary(checks, riskScore),
+      referenceComparison: null,
     };
+
+    if (documentType) {
+      const referencePaths = getReferenceFiles(documentType);
+      if (referencePaths.length > 0) {
+        result.referenceComparison = await runReferenceComparison(
+          filePath, referencePaths, 'application/pdf', documentType
+        );
+      }
+    }
+
+    return result;
   } catch (error) {
     logger.error('PDF tampering check failed:', error.message);
     throw new Error(`PDF tampering check failed: ${error.message}`);
@@ -391,7 +404,7 @@ const checkEOFMarker = (content) => {
  * @param {string} mimeType - Declared MIME type (e.g., 'image/jpeg', 'image/png')
  * @returns {Promise<Object>} - Tampering check results
  */
-const checkImageTampering = async (filePath, mimeType) => {
+const checkImageTampering = async (filePath, mimeType, documentType = null) => {
   try {
     const buffer = fs.readFileSync(filePath);
     const format = detectImageFormat(buffer);
@@ -399,25 +412,44 @@ const checkImageTampering = async (filePath, mimeType) => {
     const checks = {
       fileSignature: checkImageFileSignature(buffer, mimeType, format),
       softwareFingerprint: checkSoftwareFingerprint(buffer),
-      exifMetadata: checkExifMetadata(buffer, format),
+      exifMetadata: await checkExifMetadata(filePath, format),
       errorLevelAnalysis: await checkErrorLevelAnalysis(filePath, format),
       trailingData: checkImageTrailingData(buffer, format),
       multipleImages: checkMultipleImages(buffer, format),
       commentChunks: checkCommentChunks(buffer, format),
       structuralIntegrity: checkImageStructuralIntegrity(buffer, format),
       thumbnailPresence: checkThumbnailPresence(buffer, format),
+      aiGenerationMarkers: checkAIGenerationMarkers(buffer, format),
     };
 
     const riskScore = calculateRiskScore(checks);
 
-    return {
+    const result = {
       safe: riskScore < 30,
       riskScore,
       riskLevel: getRiskLevel(riskScore),
       format,
       checks,
-      summary: generateImageSummary(checks, riskScore),
+      summary: null,
+      referenceComparison: null,
     };
+
+    // Reference-based comparison — auto-detected by documentType
+    if (documentType) {
+      const referencePaths = getReferenceFiles(documentType);
+      if (referencePaths.length > 0) {
+        const docConfig = { AADHAAR_CARD: { name: 'Aadhaar Card' } }[documentType] || null;
+        if (docConfig) {
+          result.referenceComparison = await runReferenceComparison(
+            filePath, referencePaths, mimeType, documentType
+          );
+        }
+      }
+    }
+
+    result.summary = generateImageSummary(checks, riskScore, result.referenceComparison);
+
+    return result;
   } catch (error) {
     logger.error('Image tampering check failed:', error.message);
     throw new Error(`Image tampering check failed: ${error.message}`);
@@ -438,6 +470,8 @@ const detectImageFormat = (buffer) => {
   if (head6 === 'GIF87a' || head6 === 'GIF89a') return 'gif';
   if (buffer.slice(0, 4).toString('ascii') === 'RIFF' && buffer.slice(8, 12).toString('ascii') === 'WEBP') return 'webp';
   if (buffer[0] === 0x42 && buffer[1] === 0x4D) return 'bmp';
+  if ((buffer[0] === 0x49 && buffer[1] === 0x49 && buffer[2] === 0x2A && buffer[3] === 0x00) ||
+      (buffer[0] === 0x4D && buffer[1] === 0x4D && buffer[2] === 0x00 && buffer[3] === 0x2A)) return 'tiff';
   return 'unknown';
 };
 
@@ -453,6 +487,7 @@ const checkImageFileSignature = (buffer, mimeType, format) => {
     'image/gif': 'gif',
     'image/webp': 'webp',
     'image/bmp': 'bmp',
+    'image/tiff': 'tiff',
   };
   const expected = mimeMap[mimeType] || null;
   const mismatch = expected !== null && expected !== format;
@@ -478,6 +513,7 @@ const checkImageFileSignature = (buffer, mimeType, format) => {
 const checkSoftwareFingerprint = (buffer) => {
   const content = buffer.toString('latin1');
   const signatures = [
+    // Traditional editors
     { name: 'Adobe Photoshop', regex: /Adobe Photoshop/i, weight: 15 },
     { name: 'Adobe Lightroom', regex: /Adobe Lightroom/i, weight: 10 },
     { name: 'Adobe Illustrator', regex: /Adobe Illustrator/i, weight: 15 },
@@ -488,6 +524,14 @@ const checkSoftwareFingerprint = (buffer) => {
     { name: 'ImageMagick', regex: /ImageMagick/i, weight: 10 },
     { name: 'PaintShop', regex: /Paint Shop|PaintShop/i, weight: 15 },
     { name: 'Canva', regex: /Canva/i, weight: 10 },
+    // AI generation tools
+    { name: 'Midjourney', regex: /Midjourney/i, weight: 40 },
+    { name: 'DALL-E', regex: /DALL.E|OpenAI/i, weight: 40 },
+    { name: 'Stable Diffusion', regex: /Stable.?Diffusion|Stability.?AI/i, weight: 40 },
+    { name: 'Adobe Firefly', regex: /Firefly|Adobe.?Firefly/i, weight: 35 },
+    { name: 'Leonardo AI', regex: /Leonardo.?AI/i, weight: 35 },
+    { name: 'DreamStudio', regex: /DreamStudio/i, weight: 35 },
+    { name: 'ComfyUI', regex: /ComfyUI/i, weight: 35 },
   ];
 
   const detected = signatures.filter((s) => s.regex.test(content)).map((s) => s.name);
@@ -500,15 +544,27 @@ const checkSoftwareFingerprint = (buffer) => {
     message: suspicious
       ? `Image edited with: ${detected.join(', ')}`
       : 'No editing software signatures detected',
-    risk: Math.min(risk, 30),
+    risk: Math.min(risk, 50),
   };
 };
 
+// Singleton ExifTool instance — reuse across calls to avoid spawning a process per check
+let _exiftool = null;
+const getExifTool = () => {
+  if (!_exiftool) _exiftool = new ExifTool();
+  return _exiftool;
+};
+
+// Cleanup on exit
+process.on('exit', () => { if (_exiftool) _exiftool.end().catch(() => {}); });
+
 /**
- * Check EXIF metadata presence and date consistency (JPEG only)
+ * Check EXIF metadata presence and date consistency (JPEG, PNG, WebP, TIFF)
  */
-const checkExifMetadata = (buffer, format) => {
-  if (format !== 'jpeg') {
+const checkExifMetadata = async (filePath, format) => {
+  const exifFormats = ['jpeg', 'png', 'webp', 'tiff'];
+
+  if (!exifFormats.includes(format)) {
     return {
       passed: true,
       hasExif: false,
@@ -519,9 +575,8 @@ const checkExifMetadata = (buffer, format) => {
 
   let tags;
   try {
-    const parser = ExifParser.create(buffer);
-    const result = parser.parse();
-    tags = result.tags || {};
+    const et = getExifTool();
+    tags = await et.read(filePath);
   } catch (error) {
     return {
       passed: false,
@@ -531,7 +586,17 @@ const checkExifMetadata = (buffer, format) => {
     };
   }
 
-  if (Object.keys(tags).length === 0) {
+  // ExifTool always returns filesystem/infrastructure tags for any file.
+  // Anything beyond these indicates real metadata/EXIF presence.
+  const alwaysPresentTags = [
+    'SourceFile', 'ExifToolVersion', 'FileName', 'Directory', 'FileSize',
+    'FileModifyDate', 'FileAccessDate', 'FileInodeChangeDate', 'FilePermissions',
+    'errors', 'warnings'
+  ];
+  const userTags = Object.keys(tags).filter(k => !alwaysPresentTags.includes(k));
+  const hasExif = userTags.length > 0;
+
+  if (!hasExif) {
     return {
       passed: false,
       hasExif: false,
@@ -543,9 +608,22 @@ const checkExifMetadata = (buffer, format) => {
   const software = tags.Software || null;
   const make = tags.Make || null;
   const model = tags.Model || null;
-  const dateTimeOriginal = tags.DateTimeOriginal ? new Date(tags.DateTimeOriginal * 1000) : null;
-  const modifyDate = tags.ModifyDate ? new Date(tags.ModifyDate * 1000) : null;
-  const createDate = tags.CreateDate ? new Date(tags.CreateDate * 1000) : null;
+
+  // ExifTool returns ExifDateTime objects with a rawValue string like "2024:01:01 12:00:00"
+  const parseExifDate = (val) => {
+    if (!val) return null;
+    if (val instanceof Date) return val;
+    const raw = val.rawValue || val;
+    if (typeof raw === 'string') {
+      const m = raw.match(/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+      if (m) return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z`);
+    }
+    return null;
+  };
+
+  const dateTimeOriginal = parseExifDate(tags.DateTimeOriginal);
+  const modifyDate = parseExifDate(tags.ModifyDate);
+  const createDate = parseExifDate(tags.CreateDate);
   const hasGPS = !!(tags.GPSLatitude || tags.GPSLongitude);
 
   const editorPatterns = /Photoshop|GIMP|Lightroom|Paint|Pixelmator|Affinity|Canva|ImageMagick|Snapseed|Picsa/i;
@@ -555,11 +633,9 @@ const checkExifMetadata = (buffer, format) => {
   let dateDiffSeconds = 0;
   if (dateTimeOriginal && modifyDate) {
     dateDiffSeconds = Math.abs((modifyDate - dateTimeOriginal) / 1000);
-    // Modification > 5 minutes after capture is suspicious for unedited photos
     dateInconsistent = dateDiffSeconds > 300;
   }
 
-  // Genuine camera photos always carry Make/Model; absence on a JPEG with EXIF is suspicious
   const missingCameraInfo = !make && !model;
 
   let risk = 0;
@@ -864,9 +940,116 @@ const checkThumbnailPresence = (buffer, format) => {
 };
 
 /**
+ * Check for AI generation markers — C2PA content credentials, generation parameters,
+ * and other traces left by AI image generators like Stable Diffusion, Midjourney, DALL-E.
+ */
+const checkAIGenerationMarkers = (buffer, format) => {
+  const content = buffer.toString('latin1');
+
+  const markers = [];
+
+  // C2PA / Content Credentials (Adobe-led standard for provenance)
+  if (/c2pa|content.?credentials|http:\/\/ns\.adobe\.com\/c2pa/i.test(content)) {
+    markers.push('Content Credentials (C2PA)');
+  }
+
+  // AI generation parameter patterns commonly embedded by Stable Diffusion & derivatives
+  const genParamPatterns = [
+    /Steps:\s*\d+/i,
+    /Seed:\s*\d+/i,
+    /CFG\s*[Ss]cale:\s*[\d.]+/i,
+    /Sampler:\s*\w+/i,
+    /model_hash:/i,
+    /negative.?prompt/i,
+    /Denoising\s*[Ss]trength/i,
+    /ensd\s*\d+/i,
+  ];
+  const paramMatches = genParamPatterns.filter(r => r.test(content)).length;
+
+  // Known AI tool signatures in raw metadata/text chunks
+  const aiToolPatterns = [
+    { name: 'Stable Diffusion generation params', regex: /parameters.*\n.*Steps:|positive.*negative/i },
+    { name: 'Midjourney metadata', regex: /mj_\w+|job\s*id:|JobID/i },
+    { name: 'DALL-E metadata', regex: /dalle|openai.*generat/i },
+    { name: 'ComfyUI workflow', regex: /ComfyUI|prompt.*workflow/i },
+  ];
+  aiToolPatterns.forEach(p => {
+    if (p.regex.test(content)) markers.push(p.name);
+  });
+
+  // If at least 3 different generation parameter patterns found, it's likely AI-generated
+  if (paramMatches >= 3 && !markers.some(m => /C2PA|Stable Diffusion/i.test(m))) {
+    markers.push('AI generation parameters detected');
+  }
+
+  const detected = markers.length > 0;
+
+  return {
+    passed: !detected,
+    markers: markers,
+    paramPatternsFound: paramMatches,
+    message: detected
+      ? `AI generation markers: ${markers.join(', ')}`
+      : 'No AI generation markers detected',
+    risk: detected ? Math.min(30 + markers.length * 10, 60) : 0,
+  };
+};
+
+/**
+ * Run reference-based comparison for a target document against known-good samples
+ */
+const runReferenceComparison = async (targetPath, referencePaths, mimeType, documentType) => {
+  const buffer = fs.readFileSync(targetPath);
+  const format = detectImageFormat(buffer);
+
+  const result = {
+    used: true,
+    referenceCount: referencePaths.length,
+    similarityScore: null,
+    aspects: {},
+    discrepancies: [],
+    verdict: 'unknown',
+    confidence: 'low',
+    explanation: null,
+    structureChecks: null,
+    geminiAnalysis: null,
+  };
+
+  // 1. Structural checks specific to document type
+  const structureChecks = {};
+  if (documentType === 'AADHAAR_CARD') {
+    const content = buffer.toString('latin1');
+    structureChecks.emblemPresent = /\u0917\u0923\u0924\u0902\u0924\u094D\u0930|ashoka|emblem|government|भारत/i.test(content);
+    structureChecks.qrLikeRegion = content.includes('QR') || content.includes('QRI');
+    structureChecks.aadhaarNumberPattern = /\d{4}\s?\d{4}\s?\d{4}/.test(content);
+    structureChecks.dottedBorder = /\.\.\.\.\.\.\.\.\.\.\.\.|-----/.test(content);
+  }
+  result.structureChecks = structureChecks;
+
+  // 2. Gemini side-by-side visual comparison
+  try {
+    const geminiResult = await geminiService.compareDocumentWithReference(
+      targetPath, referencePaths, mimeType, documentType
+    );
+    result.geminiAnalysis = geminiResult;
+    result.similarityScore = geminiResult.similarityScore;
+    result.aspects = geminiResult.aspects || {};
+    result.discrepancies = geminiResult.discrepancies || [];
+    result.verdict = geminiResult.verdict || 'unknown';
+    result.confidence = geminiResult.confidence || 'low';
+    result.explanation = geminiResult.explanation || null;
+  } catch (error) {
+    logger.warn(`Reference comparison Gemini analysis failed: ${error.message}`);
+    result.geminiAnalysis = { success: false, error: error.message };
+  }
+
+  return result;
+};
+
+/**
  * Generate human-readable summary for image tampering check
  */
-const generateImageSummary = (checks, riskScore) => {
+const generateImageSummary = (checks, riskScore, referenceComparison) => {
   const warnings = [];
   if (checks.fileSignature.mismatch) warnings.push('File signature mismatch');
   if (checks.softwareFingerprint.detectedSoftware && checks.softwareFingerprint.detectedSoftware.length > 0) {
@@ -874,12 +1057,18 @@ const generateImageSummary = (checks, riskScore) => {
   }
   if (checks.exifMetadata.editedBySoftware) warnings.push(`EXIF Software: ${checks.exifMetadata.software}`);
   if (checks.exifMetadata.dateInconsistent) warnings.push('EXIF date inconsistency');
-  if (checks.exifMetadata.hasExif === false && checks.exifMetadata.passed === false) warnings.push('EXIF metadata missing');
+  if (checks.exifMetadata.hasExif === false && checks.exifMetadata.passed === false) warnings.push('EXIF metadata missing or unparseable');
   if (checks.errorLevelAnalysis && !checks.errorLevelAnalysis.passed) warnings.push('ELA anomalies');
   if (checks.trailingData.trailingBytes > 0) warnings.push('Data after image end marker');
   if (checks.multipleImages.imageCount > 2) warnings.push('Multiple image signatures');
   if (checks.commentChunks.commentCount > 5) warnings.push('Excessive comment chunks');
   if (!checks.structuralIntegrity.passed) warnings.push('Structural issues');
+  if (checks.aiGenerationMarkers && !checks.aiGenerationMarkers.passed) {
+    warnings.push(`AI generation detected: ${checks.aiGenerationMarkers.markers.join(', ')}`);
+  }
+  if (referenceComparison && referenceComparison.verdict === 'likely_tampered') {
+    warnings.push(`Reference comparison: ${referenceComparison.explanation || 'mismatch with reference samples'}`);
+  }
 
   if (warnings.length === 0) {
     return 'Image appears safe with no suspicious indicators';

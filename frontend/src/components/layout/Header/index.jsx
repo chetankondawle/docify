@@ -13,7 +13,7 @@ const Header = () => {
     <header className={styles.header}>
       <div className={styles.container}>
         <Link to="/" className={styles.logo}>
-          Docify
+          TruExtract
         </Link>
         <nav className={styles.nav}>
           {navLinks.map(({ label, to }) => (

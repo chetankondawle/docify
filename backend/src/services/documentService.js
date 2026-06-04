@@ -126,6 +126,7 @@ const updateImageTamperingResults = (id, tamperingResult) => {
     format: tamperingResult.format,
     checks: tamperingResult.checks,
     aiAnalysis: tamperingResult.aiAnalysis || null,
+    referenceComparison: tamperingResult.referenceComparison || null,
     summary: tamperingResult.summary,
     checkedAt: new Date().toISOString(),
   };

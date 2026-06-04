@@ -283,31 +283,47 @@ const analyzeImageForTampering = async (filePath, mimeType, heuristicChecks) => 
 
       const heuristicSummary = JSON.stringify(heuristicChecks, null, 2);
 
-      const prompt = `You are a forensic image analyst. Inspect the attached image for signs of digital tampering or manipulation.
+      const prompt = `You are checking an image for signs of editing and AI generation. Look at the image and the automated checks below, then give a short, plain-language verdict.
 
-Automated heuristic checks already produced these findings:
+Automated checks:
 ${heuristicSummary}
 
-Visually inspect the image and look for:
-- Inconsistent shadows, lighting, or reflections
-- Misaligned, blurred, or mismatched text (especially in IDs, certificates, or documents)
-- Visible cloning, copy-paste, or healing artifacts
-- Inconsistent fonts, colors, kerning, or background patterns within the same region
-- Edges that suggest a pasted or overlaid element
-- Resolution or compression mismatches between regions
-- Anything that contradicts or confirms the heuristic findings above
+Write for a non-technical reader. Be brief and direct.
 
-Return ONLY a valid JSON object with this structure:
+IMPORTANT — Also look for these AI/deepfake indicators specifically:
+- Unnatural smooth skin or faces with no texture
+- Asymmetric eyes, ears, or facial features
+- Garbled or distorted text (letters that don't form real words)
+- Inconsistent shadows or lighting across the image
+- Anatomical errors (extra fingers, misshapen hands, weird teeth)
+- Overly perfect or artificial-looking backgrounds
+- Inconsistent reflections in glasses, windows, or shiny surfaces
+
+Rules for your response:
+- "explanation": ONE sentence, max 20 words, plain English. No jargon (avoid "artifacts", "ELA", "EXIF", "compression", "kerning"). Say what you see, not how you checked.
+- "visualFindings": up to 3 items. Each item max 10 words. Plain English. Only include things you can actually see in the image. Empty array if nothing notable.
+- "regionsOfConcern": up to 2 items. Each item max 8 words, naming where in the image (e.g. "photo area", "name field", "bottom-right corner"). Empty array if none.
+- "verdict": one of "authentic", "suspicious", "likely_tampered", "ai_generated".
+- "confidence": one of "low", "medium", "high".
+- "agreesWithHeuristics": true or false.
+- "aiGenerationIndicators": list any AI/deepfake signs you see (max 2 items, 10 words each). Empty array if none.
+
+Examples of good explanations:
+- "Image looks original with no visible edits or AI signs."
+- "The name field looks pasted in — different sharpness than the rest."
+- "Face is unnaturally smooth with garbled text — likely AI generated."
+- "Photo and text don't match in lighting; likely edited."
+
+Return ONLY this JSON, no markdown, no code blocks:
 {
-  "verdict": "authentic" | "suspicious" | "likely_tampered",
+  "verdict": "authentic" | "suspicious" | "likely_tampered" | "ai_generated",
   "confidence": "low" | "medium" | "high",
-  "visualFindings": ["finding 1", "finding 2"],
-  "regionsOfConcern": ["description of suspicious region 1"],
+  "visualFindings": [],
+  "regionsOfConcern": [],
+  "aiGenerationIndicators": [],
   "agreesWithHeuristics": true | false,
-  "explanation": "1-2 sentence summary"
-}
-
-No markdown, no code blocks, only JSON.`;
+  "explanation": ""
+}`;
 
       const result = await model.generateContent([prompt, imagePart]);
       const response = await result.response;
@@ -352,8 +368,135 @@ No markdown, no code blocks, only JSON.`;
   }
 };
 
+/**
+ * Side-by-side comparison of a target document against reference sample images.
+ * Sends target + up to 3 reference images to Gemini for forensic document comparison.
+ */
+const compareDocumentWithReference = async (targetPath, referencePaths, mimeType, documentType) => {
+  try {
+    logger.info(`Starting reference comparison for ${documentType}: ${targetPath}`);
+
+    if (!fs.existsSync(targetPath)) {
+      throw new Error(`Target file not found: ${targetPath}`);
+    }
+
+    const compareFn = async () => {
+      const model = initGemini();
+      const targetBuffer = fs.readFileSync(targetPath);
+      const targetBase64 = targetBuffer.toString('base64');
+
+      const imageParts = [
+        { inlineData: { data: targetBase64, mimeType } },
+      ];
+
+      const refsToSend = referencePaths.slice(0, 3).filter(p => fs.existsSync(p));
+      for (const refPath of refsToSend) {
+        const refBuffer = fs.readFileSync(refPath);
+        imageParts.push({
+          inlineData: { data: refBuffer.toString('base64'), mimeType },
+        });
+      }
+
+      const aspectChecks = documentType === 'AADHAAR_CARD'
+        ? `1. Layout: Do field positions (Name, DOB, Gender, Aadhaar Number, Address) match the reference?
+2. Government Emblem: Is the Ashoka Chakra / government emblem present and correctly positioned at the top?
+3. QR Code: Is there a QR code in the expected region (bottom-right)?
+4. Text Fields: Are text labels correctly placed (English on top, Hindi below)?
+5. Font: Does the font style and weight match the reference?
+6. Aadhaar Number Format: Does the number follow XXXX XXXX XXXX pattern?
+7. Dotted Borders: Are the dotted envelope borders present and correctly formed?
+8. Photo Area: Is there a photo area in the expected position (left side)?`
+        : `1. Layout: Does the overall layout match the reference?
+2. Logos/Seals: Are official logos, seals, or stamps present and correctly positioned?
+3. Text Fields: Are key fields in the expected positions?
+4. Font: Does the font style match the reference?
+5. Format: Do numbers/dates follow the expected format?`;
+
+      const prompt = `You are a forensic document examiner. Compare the FIRST image (the TARGET document) against the REMAINING images (reference samples of a genuine ${documentType.replace('_', ' ')}).
+
+The references are known genuine samples. Your job is to determine if the target matches them or shows signs of tampering.
+
+Analyze these specific aspects:
+
+${aspectChecks}
+
+Rules for your response:
+- "similarityScore": number 0-100. 100 = perfect match with reference.
+- "aspects": evaluate each aspect above as match=true/false with a short note (max 15 words each)
+- "discrepancies": list specific differences found between target and references (max 5 items, 15 words each). Empty array if none.
+- "verdict": one of "authentic", "suspicious", "likely_tampered"
+- "confidence": one of "low", "medium", "high"
+- "explanation": one sentence, max 20 words, plain English
+
+Return ONLY this JSON:
+{
+  "similarityScore": 0-100,
+  "aspects": {
+    "layout": { "match": true, "notes": "" },
+    "emblem": { "match": true, "notes": "" },
+    "qrCode": { "match": true, "notes": "" },
+    "textFields": { "match": true, "notes": "" },
+    "font": { "match": true, "notes": "" },
+    "aadhaarFormat": { "match": true, "notes": "" },
+    "borders": { "match": true, "notes": "" },
+    "photoArea": { "match": true, "notes": "" }
+  },
+  "discrepancies": [],
+  "verdict": "authentic",
+  "confidence": "high",
+  "explanation": ""
+}`;
+
+      const result = await model.generateContent([prompt, ...imageParts]);
+      const response = await result.response;
+      let text = response.text();
+      text = text.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
+
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch (parseError) {
+        logger.warn('Failed to parse Gemini reference comparison as JSON');
+        parsed = {
+          similarityScore: 0,
+          aspects: {},
+          discrepancies: [],
+          verdict: 'unknown',
+          confidence: 'low',
+          explanation: text.slice(0, 500),
+          parseError: parseError.message,
+        };
+      }
+
+      return parsed;
+    };
+
+    const result = await withRetry(compareFn, 'Reference comparison');
+    logger.info(`Reference comparison verdict: ${result.verdict} (${result.similarityScore}% similar)`);
+
+    return {
+      success: true,
+      referenceCount: referencePaths.length,
+      ...result,
+      model: config.gemini.model,
+    };
+  } catch (error) {
+    logger.error('Reference comparison failed:', error.message);
+    return {
+      success: false,
+      similarityScore: 0,
+      aspects: {},
+      discrepancies: [],
+      verdict: 'unknown',
+      confidence: 'low',
+      error: error.message,
+    };
+  }
+};
+
 module.exports = {
   extractTextFromDocument,
   extractStructuredData,
   analyzeImageForTampering,
+  compareDocumentWithReference,
 };
