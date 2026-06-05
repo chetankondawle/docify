@@ -771,14 +771,61 @@ const DocumentsPage = () => {
                       )}
 
                       {tamperingResults[doc.id].aiAnalysis?.success && (
-                        <Box sx={{ mt: 2, p: 1.5, bgcolor: 'grey.50', borderRadius: 1 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                            <Typography variant="caption" fontWeight={600}>{tamperingResults[doc.id].aiAnalysis.verdict?.replace(/_/g, ' ')}</Typography>
-                            <Chip label={tamperingResults[doc.id].aiAnalysis.confidence} size="small" variant="outlined" />
+                        <Box sx={{ mt: 2, borderRadius: 2, border: 1, borderColor: 'divider', overflow: 'hidden' }}>
+                          <Box sx={{ px: 2, py: 1.5, bgcolor: 'grey.50', borderBottom: 1, borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <Typography variant="subtitle2" fontWeight={600}>AI Analysis</Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Chip
+                                label={tamperingResults[doc.id].aiAnalysis.verdict?.replace(/_/g, ' ').toUpperCase()}
+                                size="small"
+                                color={
+                                  tamperingResults[doc.id].aiAnalysis.verdict === 'authentic' ? 'success' :
+                                  tamperingResults[doc.id].aiAnalysis.verdict === 'suspicious' ? 'warning' :
+                                  tamperingResults[doc.id].aiAnalysis.verdict === 'likely_tampered' ? 'error' :
+                                  tamperingResults[doc.id].aiAnalysis.verdict === 'ai_generated' ? 'error' : 'default'
+                                }
+                                sx={{ fontWeight: 600, textTransform: 'none' }}
+                              />
+                              <Chip label={`Confidence: ${tamperingResults[doc.id].aiAnalysis.confidence}`} size="small" variant="outlined" />
+                            </Box>
                           </Box>
-                          {tamperingResults[doc.id].aiAnalysis.explanation && (
-                            <Typography variant="caption" color="text.secondary">{tamperingResults[doc.id].aiAnalysis.explanation}</Typography>
-                          )}
+                          <Box sx={{ p: 2 }}>
+                            {tamperingResults[doc.id].aiAnalysis.explanation && (
+                              <Typography variant="body2" color="text.primary" sx={{ mb: 1.5, lineHeight: 1.6 }}>
+                                {tamperingResults[doc.id].aiAnalysis.explanation}
+                              </Typography>
+                            )}
+                            {tamperingResults[doc.id].aiAnalysis.visualFindings?.length > 0 && (
+                              <Box sx={{ mt: 1 }}>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, display: 'block', mb: 0.5 }}>Visual Findings</Typography>
+                                {tamperingResults[doc.id].aiAnalysis.visualFindings.map((f, i) => (
+                                  <Typography key={i} variant="caption" color="text.secondary" display="block" sx={{ pl: 1, '&::before': { content: '"• "', color: 'warning.main' } }}>
+                                    {f}
+                                  </Typography>
+                                ))}
+                              </Box>
+                            )}
+                            {tamperingResults[doc.id].aiAnalysis.regionsOfConcern?.length > 0 && (
+                              <Box sx={{ mt: 1 }}>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, display: 'block', mb: 0.5 }}>Regions of Concern</Typography>
+                                {tamperingResults[doc.id].aiAnalysis.regionsOfConcern.map((r, i) => (
+                                  <Typography key={i} variant="caption" color="error.main" display="block" sx={{ pl: 1, '&::before': { content: '"⚠ "' } }}>
+                                    {r}
+                                  </Typography>
+                                ))}
+                              </Box>
+                            )}
+                            {tamperingResults[doc.id].aiAnalysis.agreesWithHeuristics !== null && (
+                              <Box sx={{ mt: 1.5, pt: 1.5, borderTop: 1, borderColor: 'divider' }}>
+                                <Chip
+                                  label={tamperingResults[doc.id].aiAnalysis.agreesWithHeuristics ? 'AI agrees with heuristic checks' : 'AI disagrees with heuristic checks'}
+                                  size="small"
+                                  color={tamperingResults[doc.id].aiAnalysis.agreesWithHeuristics ? 'success' : 'warning'}
+                                  variant="outlined"
+                                />
+                              </Box>
+                            )}
+                          </Box>
                         </Box>
                       )}
                     </Box>

@@ -412,12 +412,11 @@ Look for these tampering indicators specifically:
 - Any visible edit marks or revision history
 - Mismatched formatting between different sections
 - Unusual spacing or kerning that suggests text replacement
-- Digital signature anomalies or missing signature properties
 
 Rules for your response:
 - "explanation": ONE sentence, max 20 words, plain English. Say what you see, not how you checked.
 - "visualFindings": up to 3 items. Each item max 10 words. Plain English. Only include things you can actually see in the document. Empty array if nothing notable.
-- "regionsOfConcern": up to 2 items. Each item max 8 words, naming where in the document (e.g. "signature area", "date field", "top header"). Empty array if none.
+- "regionsOfConcern": up to 2 items. Each item max 8 words, naming where in the document (e.g. "date field", "top header", "photo area"). Empty array if none.
 - "verdict": one of "authentic", "suspicious", "likely_tampered", "ai_generated".
 - "confidence": one of "low", "medium", "high".
 - "agreesWithHeuristics": true or false.
@@ -425,7 +424,7 @@ Rules for your response:
 Examples of good explanations:
 - "Document appears genuine with consistent formatting throughout."
 - "The date field text looks different from the surrounding text."
-- "Signature area shows signs of digital alteration."
+- "The logo appears to be pasted onto the document."
 
 Return ONLY this JSON, no markdown, no code blocks:
 {
