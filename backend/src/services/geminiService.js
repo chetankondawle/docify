@@ -1,4 +1,4 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const OpenAI = require('openai');
 const fs = require('fs');
 const config = require('../config');
 const logger = require('../utils/logger');
@@ -6,16 +6,16 @@ const logger = require('../utils/logger');
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const withRetry = async (fn, context) => {
-  const maxRetries = config.gemini.maxRetries;
+  const maxRetries = config.hackdna.maxRetries;
   let lastError;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), config.gemini.timeoutMs);
+      const timeout = setTimeout(() => controller.abort(), config.hackdna.timeoutMs);
 
       try {
-        const result = await fn();
+        const result = await fn(controller.signal);
         return result;
       } finally {
         clearTimeout(timeout);
@@ -45,18 +45,40 @@ const withRetry = async (fn, context) => {
   throw lastError;
 };
 
-const initGemini = () => {
-  const apiKey = config.gemini.apiKey;
-
-  if (!apiKey) {
+const initClient = () => {
+  if (!config.hackdna.apiKey) {
     throw new Error(
-      'GEMINI_API_KEY is not configured. ' +
-      'Get your API key from https://aistudio.google.com/app/apikey'
+      'HACKDNA_API_KEY is not configured in environment variables.'
     );
   }
 
-  const genAI = new GoogleGenerativeAI(apiKey);
-  return genAI.getGenerativeModel({ model: config.gemini.model });
+  const headers = {};
+  if (config.hackdna.sourceEmail) {
+    headers['X-Source'] = config.hackdna.sourceEmail;
+  }
+
+  return new OpenAI({
+    apiKey: config.hackdna.apiKey,
+    baseURL: config.hackdna.baseUrl,
+    defaultHeaders: headers,
+    maxRetries: 0,
+  });
+};
+
+const buildImageContent = (prompt, base64Image, mimeType) => [
+  { type: 'text', text: prompt },
+  { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Image}` } },
+];
+
+const callAI = async (client, content, signal) => {
+  const response = await client.chat.completions.create(
+    {
+      model: config.hackdna.model,
+      messages: [{ role: 'user', content }],
+    },
+    { signal }
+  );
+  return response.choices[0].message.content;
 };
 
 const extractTextFromDocument = async (filePath, mimeType) => {
@@ -67,14 +89,10 @@ const extractTextFromDocument = async (filePath, mimeType) => {
       throw new Error(`File not found: ${filePath}`);
     }
 
-    const ocrFn = async () => {
-      const model = initGemini();
+    const ocrFn = async (signal) => {
+      const client = initClient();
       const fileBuffer = fs.readFileSync(filePath);
       const base64Data = fileBuffer.toString('base64');
-
-      const imagePart = {
-        inlineData: { data: base64Data, mimeType },
-      };
 
       const prompt = `Analyze this document and extract ONLY meaningful data. Ignore decorative elements, headers, footers, and irrelevant text.
 
@@ -103,25 +121,23 @@ If no meaningful data found, return:
 
 Return ONLY valid JSON, no markdown formatting, no explanations.`;
 
-      logger.debug('Sending request to Gemini API...');
-      const result = await model.generateContent([prompt, imagePart]);
-      const response = await result.response;
-      let extractedText = response.text();
-      extractedText = extractedText.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
+      const content = buildImageContent(prompt, base64Data, mimeType);
+      const text = await callAI(client, content, signal);
+      const cleaned = text.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
 
       let parsedData;
       try {
-        parsedData = JSON.parse(extractedText);
+        parsedData = JSON.parse(cleaned);
       } catch (parseError) {
         logger.warn('Failed to parse JSON, returning raw text');
         parsedData = {
           documentType: 'unknown',
-          extractedData: { rawText: extractedText },
+          extractedData: { rawText: cleaned },
           confidence: 'low',
         };
       }
 
-      return { data: parsedData, rawText: extractedText };
+      return { data: parsedData, rawText: cleaned };
     };
 
     const result = await withRetry(ocrFn, 'OCR extraction');
@@ -131,17 +147,17 @@ Return ONLY valid JSON, no markdown formatting, no explanations.`;
       success: true,
       data: result.data,
       rawText: result.rawText,
-      model: config.gemini.model,
+      model: config.hackdna.model,
     };
   } catch (error) {
     logger.error('OCR extraction failed:', error.message);
 
     if (error.message.includes('API_KEY_INVALID') || error.message.includes('API key')) {
-      throw new Error('Invalid Gemini API key. Please check your GEMINI_API_KEY in .env file.');
+      throw new Error('Invalid HackDNA API key. Please check your HACKDNA_API_KEY in .env file.');
     }
 
     if (error.message.includes('quota') || error.message.includes('429')) {
-      throw new Error('Gemini API quota exceeded. Please check your usage limits or try again later.');
+      throw new Error('HackDNA API quota exceeded. Please check your usage limits or try again later.');
     }
 
     if (error.message.includes('timed out') || error.message.includes('aborted')) {
@@ -160,14 +176,10 @@ const extractStructuredData = async (filePath, mimeType, schema) => {
       throw new Error(`File not found: ${filePath}`);
     }
 
-    const extractFn = async () => {
-      const model = initGemini();
+    const extractFn = async (signal) => {
+      const client = initClient();
       const fileBuffer = fs.readFileSync(filePath);
       const base64Data = fileBuffer.toString('base64');
-
-      const imagePart = {
-        inlineData: { data: base64Data, mimeType },
-      };
 
       const schemaDescription = schema ? JSON.stringify(schema, null, 2) : '{}';
 
@@ -201,14 +213,13 @@ Rules:
 - typeMatch must be false if the document is clearly a different type
 - If you cannot determine the document type, use "unknown"`;
 
-      const result = await model.generateContent([prompt, imagePart]);
-      const response = await result.response;
-      let extractedText = response.text();
-      extractedText = extractedText.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
+      const content = buildImageContent(prompt, base64Data, mimeType);
+      const text = await callAI(client, content, signal);
+      const cleaned = text.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
 
       let parsedData;
       try {
-        parsedData = JSON.parse(extractedText);
+        parsedData = JSON.parse(cleaned);
         if (Array.isArray(parsedData) && parsedData.length === 1) {
           parsedData = parsedData[0];
         }
@@ -235,14 +246,14 @@ Rules:
           parsedData.extractedData = dataWithoutMeta;
         }
       } catch (parseError) {
-        logger.warn('Failed to parse JSON from Gemini response, returning raw text');
+        logger.warn('Failed to parse JSON from AI response, returning raw text');
         parsedData = {
           detectedDocumentType: 'unknown',
           typeMatch: null,
           extractedData: {},
           missingFields: [],
           confidence: 'low',
-          rawText: extractedText,
+          rawText: cleaned,
           parseError: parseError.message,
         };
       }
@@ -256,7 +267,7 @@ Rules:
     return {
       success: true,
       data: result.data,
-      model: config.gemini.model,
+      model: config.hackdna.model,
     };
   } catch (error) {
     logger.error('Structured data extraction failed:', error.message);
@@ -272,14 +283,10 @@ const analyzeImageForTampering = async (filePath, mimeType, heuristicChecks) => 
       throw new Error(`File not found: ${filePath}`);
     }
 
-    const analyzeFn = async () => {
-      const model = initGemini();
+    const analyzeFn = async (signal) => {
+      const client = initClient();
       const fileBuffer = fs.readFileSync(filePath);
       const base64Data = fileBuffer.toString('base64');
-
-      const imagePart = {
-        inlineData: { data: base64Data, mimeType },
-      };
 
       const heuristicSummary = JSON.stringify(heuristicChecks, null, 2);
 
@@ -325,23 +332,22 @@ Return ONLY this JSON, no markdown, no code blocks:
   "explanation": ""
 }`;
 
-      const result = await model.generateContent([prompt, imagePart]);
-      const response = await result.response;
-      let text = response.text();
-      text = text.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
+      const content = buildImageContent(prompt, base64Data, mimeType);
+      const text = await callAI(client, content, signal);
+      const cleaned = text.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
 
       let parsed;
       try {
-        parsed = JSON.parse(text);
+        parsed = JSON.parse(cleaned);
       } catch (parseError) {
-        logger.warn('Failed to parse Gemini tampering response as JSON');
+        logger.warn('Failed to parse AI tampering response as JSON');
         parsed = {
           verdict: 'unknown',
           confidence: 'low',
           visualFindings: [],
           regionsOfConcern: [],
           agreesWithHeuristics: null,
-          explanation: text.slice(0, 500),
+          explanation: cleaned.slice(0, 500),
           parseError: parseError.message,
         };
       }
@@ -350,15 +356,15 @@ Return ONLY this JSON, no markdown, no code blocks:
     };
 
     const result = await withRetry(analyzeFn, 'Tampering analysis');
-    logger.info(`Gemini tampering analysis verdict: ${result.verdict}`);
+    logger.info(`AI tampering analysis verdict: ${result.verdict}`);
 
     return {
       success: true,
       ...result,
-      model: config.gemini.model,
+      model: config.hackdna.model,
     };
   } catch (error) {
-    logger.error('Gemini tampering analysis failed:', error.message);
+    logger.error('AI tampering analysis failed:', error.message);
     return {
       success: false,
       verdict: 'unknown',
@@ -368,10 +374,6 @@ Return ONLY this JSON, no markdown, no code blocks:
   }
 };
 
-/**
- * Side-by-side comparison of a target document against reference sample images.
- * Sends target + up to 3 reference images to Gemini for forensic document comparison.
- */
 const compareDocumentWithReference = async (targetPath, referencePaths, mimeType, documentType) => {
   try {
     logger.info(`Starting reference comparison for ${documentType}: ${targetPath}`);
@@ -380,22 +382,12 @@ const compareDocumentWithReference = async (targetPath, referencePaths, mimeType
       throw new Error(`Target file not found: ${targetPath}`);
     }
 
-    const compareFn = async () => {
-      const model = initGemini();
+    const compareFn = async (signal) => {
+      const client = initClient();
       const targetBuffer = fs.readFileSync(targetPath);
       const targetBase64 = targetBuffer.toString('base64');
 
-      const imageParts = [
-        { inlineData: { data: targetBase64, mimeType } },
-      ];
-
       const refsToSend = referencePaths.slice(0, 3).filter(p => fs.existsSync(p));
-      for (const refPath of refsToSend) {
-        const refBuffer = fs.readFileSync(refPath);
-        imageParts.push({
-          inlineData: { data: refBuffer.toString('base64'), mimeType },
-        });
-      }
 
       const aspectChecks = documentType === 'AADHAAR_CARD'
         ? `1. Layout: Do field positions (Name, DOB, Gender, Aadhaar Number, Address) match the reference?
@@ -447,23 +439,30 @@ Return ONLY this JSON:
   "explanation": ""
 }`;
 
-      const result = await model.generateContent([prompt, ...imageParts]);
-      const response = await result.response;
-      let text = response.text();
-      text = text.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
+      const content = [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: `data:${mimeType};base64,${targetBase64}` } },
+        ...refsToSend.map(rp => {
+          const refBuf = fs.readFileSync(rp);
+          return { type: 'image_url', image_url: { url: `data:${mimeType};base64,${refBuf.toString('base64')}` } };
+        }),
+      ];
+
+      const text = await callAI(client, content, signal);
+      const cleaned = text.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
 
       let parsed;
       try {
-        parsed = JSON.parse(text);
+        parsed = JSON.parse(cleaned);
       } catch (parseError) {
-        logger.warn('Failed to parse Gemini reference comparison as JSON');
+        logger.warn('Failed to parse AI reference comparison as JSON');
         parsed = {
           similarityScore: 0,
           aspects: {},
           discrepancies: [],
           verdict: 'unknown',
           confidence: 'low',
-          explanation: text.slice(0, 500),
+          explanation: cleaned.slice(0, 500),
           parseError: parseError.message,
         };
       }
@@ -478,7 +477,7 @@ Return ONLY this JSON:
       success: true,
       referenceCount: referencePaths.length,
       ...result,
-      model: config.gemini.model,
+      model: config.hackdna.model,
     };
   } catch (error) {
     logger.error('Reference comparison failed:', error.message);

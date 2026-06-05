@@ -455,7 +455,7 @@ const DocumentsPage = () => {
         {documents.length > 0 && documents[activeTab] && (() => {
           const doc = documents[activeTab];
           return (
-            <div className={styles.splitPanel}>
+            <div className={styles.splitPanel} key={doc.id}>
               {/* Left: Document Preview */}
               <div className={styles.previewPanel}>
                 <div className={styles.previewHeader}>

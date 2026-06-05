@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-const REQUIRED_ENV_VARS = ['GEMINI_API_KEY'];
+const REQUIRED_ENV_VARS = ['HACKDNA_API_KEY'];
 
 const missing = REQUIRED_ENV_VARS.filter(k => !process.env[k]);
 if (missing.length > 0) {
@@ -24,11 +24,13 @@ const config = {
       ? process.env.ALLOWED_ORIGINS.split(',')
       : ['http://localhost:3000', 'http://localhost:5173'],
   },
-  gemini: {
-    apiKey: process.env.GEMINI_API_KEY,
-    model: process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp',
-    maxRetries: parseInt(process.env.GEMINI_MAX_RETRIES, 10) || 1,
-    timeoutMs: parseInt(process.env.GEMINI_TIMEOUT_MS, 10) || 30000,
+  hackdna: {
+    apiKey: process.env.HACKDNA_API_KEY,
+    baseUrl: process.env.HACKDNA_BASE_URL || 'https://hack.fyndna.com/api/v1',
+    model: process.env.HACKDNA_MODEL || 'google/gemini-2.5-flash-lite',
+    sourceEmail: process.env.HACKDNA_SOURCE_EMAIL || '',
+    maxRetries: parseInt(process.env.HACKDNA_MAX_RETRIES, 10) || 1,
+    timeoutMs: parseInt(process.env.HACKDNA_TIMEOUT_MS, 10) || 30000,
   },
   upload: {
     maxFileSize: parseInt(process.env.MAX_FILE_SIZE_BYTES, 10) || 10 * 1024 * 1024,
