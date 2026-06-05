@@ -647,14 +647,16 @@ const DocumentsPage = () => {
                       )}
                     </Box>
                     <Divider />
-                    {/* <Box sx={{ p: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Box sx={{ p: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Typography variant="caption" color="text.secondary">Model: {ocrResults[doc.id].model}</Typography>
-                      <Button size="small"
+                      <Button
+                        size="sm"
                         onClick={async () => { await handleValidateOCR(doc.id, doc.originalName); }}
-                        disabled={validateLoading[doc.id]}>
-                        {validateLoading[doc.id] ? 'Validating...' : 'Validate'}
+                        loading={validateLoading[doc.id]}
+                      >
+                        Validate
                       </Button>
-                    </Box> */}
+                    </Box>
                   </Paper>
                   );
                 })()}
