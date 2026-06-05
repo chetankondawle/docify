@@ -137,9 +137,9 @@ const DocumentsPage = () => {
   useEffect(() => {
     setActiveTab(documents.length > 0 ? documents.length - 1 : 0);
     const currentIds = new Set(documents.map((d) => d.id));
-    setOcrResults((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => currentIds.has(Number(id)))));
-    setTamperingResults((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => currentIds.has(Number(id)))));
-    setValidationResults((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => currentIds.has(Number(id)))));
+    setOcrResults((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => currentIds.has(id))));
+    setTamperingResults((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => currentIds.has(id))));
+    setValidationResults((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => currentIds.has(id))));
   }, [documents.length]);
 
   useEffect(() => {
@@ -330,6 +330,15 @@ const DocumentsPage = () => {
 
   const getBaseUrl = () =>
     import.meta.env.VITE_API_BASE_URL?.replace('/api/v1', '') || 'http://localhost:5000';
+
+  const getDocLabel = (id) => {
+    const doc = documents.find(d => String(d.id) === String(id));
+    if (!doc) return id;
+    const typeLabel = doc.documentType
+      ? doc.documentType.split('_').map(w => w === 'PAN' ? w : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+      : 'Unknown';
+    return `${typeLabel} - ${doc.originalName}`;
+  };
 
   const doc = documents.length > 0 ? documents[activeTab] : null;
 
@@ -808,7 +817,7 @@ const DocumentsPage = () => {
                         <Box sx={{ mt: 1 }}>
                           {Object.entries(issue.details).map(([value, docIds]) => (
                             <Typography key={value} variant="caption" display="block">
-                              &quot;{value}&quot; found in: {Array.isArray(docIds) ? docIds.join(', ') : docIds}
+                              &quot;{value}&quot; found in: {Array.isArray(docIds) ? docIds.map(id => getDocLabel(id)).join(', ') : getDocLabel(docIds)}
                             </Typography>
                           ))}
                         </Box>

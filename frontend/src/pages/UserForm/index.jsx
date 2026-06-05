@@ -23,11 +23,6 @@ const UserFormPage = () => {
   const [successMessage, setSuccessMessage] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    const existingData = getUserInfo();
-    if (existingData) setFormData(existingData);
-  }, []);
-
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
