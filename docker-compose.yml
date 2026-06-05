@@ -15,7 +15,11 @@ services:
         yugabyted start --daemon=false --advertise_address=$$CONTAINER_IP --insecure
       "
     healthcheck:
-      test: ["CMD-SHELL", "ysqlsh -h $(hostname -i) -U yugabyte -d yugabyte -c 'SELECT 1' 2>/dev/null"]
+      test:
+        [
+          "CMD-SHELL",
+          "ysqlsh -h $(hostname -i) -U yugabyte -d yugabyte -c 'SELECT 1' 2>/dev/null",
+        ]
       interval: 10s
       timeout: 5s
       retries: 15
