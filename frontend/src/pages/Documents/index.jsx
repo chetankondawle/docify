@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import FileUpload from '@components/common/FileUpload';
 import Button from '@components/common/Button';
+import Snackbar from '@components/common/Snackbar';
 import { getAllDocuments, deleteDocument } from '@services/documentService';
 import { extractOCR, extractStructuredData, getDocumentTypes } from '@services/ocrService';
 import { checkTampering, checkImageTampering } from '@services/tamperingService';
@@ -50,10 +51,13 @@ const DocumentsPage = () => {
   };
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [successMessage, setSuccessMessage] = useState(null);
+  const [snackbar, setSnackbar] = useState(null);
   const mountedRef = useRef(true);
   const timersRef = useRef([]);
+
+  const showSnackbar = (message, type = 'error') => {
+    setSnackbar({ message, type });
+  };
 
   const safeTimeout = (fn, ms) => {
     const id = setTimeout(() => {
@@ -74,6 +78,9 @@ const DocumentsPage = () => {
 
   const [ocrLoading, setOcrLoading] = useState({});
   const [ocrResults, setOcrResults] = useState({});
+  const [showOriginal, setShowOriginal] = useState({}); // toggle original vs translated
+
+  // Tampering check states
   const [tamperingLoading, setTamperingLoading] = useState({});
   const [tamperingResults, setTamperingResults] = useState({});
   const [userInfo, setUserInfo] = useState(null);
@@ -85,17 +92,18 @@ const DocumentsPage = () => {
   const [crossValidationError, setCrossValidationError] = useState(null);
   const [crossValidationSuccess, setCrossValidationSuccess] = useState(false);
   const [allAvailableDocumentTypes, setAllAvailableDocumentTypes] = useState([]);
+  const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
   const [selectedTypeForUpload, setSelectedTypeForUpload] = useState('');
   const [activeTab, setActiveTab] = useState(0);
 
   const fetchDocuments = useCallback(async () => {
     try {
       setLoading(true);
-      setError(null);
       const response = await getAllDocuments();
       setDocuments(response.data || []);
     } catch (err) {
-      setError(err.message || 'Failed to fetch documents');
+      showSnackbar(err.message || 'Failed to fetch documents');
     } finally {
       setLoading(false);
     }
@@ -127,33 +135,32 @@ const DocumentsPage = () => {
         setAllAvailableDocumentTypes(response.data.documentTypes || []);
       } catch (err) {
         console.error("Error fetching document types:", err);
-        setError("Failed to load document types. Please check the backend service.");
+        showSnackbar("Failed to load document types. Please check the backend service.");
       }
     };
     fetchTypes();
   }, []);
 
   const handleUploadSuccess = (document) => {
+    showSnackbar(`Document "${document.originalName}" uploaded successfully!`, 'success');
+    fetchDocuments();
     setSuccessMessage(`Document "${document.originalName}" uploaded successfully!`);
     safeTimeout(() => setSuccessMessage(null), 5000);
     fetchDocuments();
   };
 
   const handleUploadError = (errorMsg) => {
-    setError(errorMsg);
-    safeTimeout(() => setError(null), 5000);
+    showSnackbar(errorMsg);
   };
 
   const handleDelete = async (id, name) => {
     if (!window.confirm(`Are you sure you want to delete "${name}"?`)) return;
     try {
       await deleteDocument(id);
-      setSuccessMessage('Document deleted successfully');
-      safeTimeout(() => setSuccessMessage(null), 5000);
+      showSnackbar('Document deleted successfully', 'success');
       fetchDocuments();
     } catch (err) {
-      setError(err.message || 'Failed to delete document');
-      safeTimeout(() => setError(null), 5000);
+      showSnackbar(err.message || 'Failed to delete document');
     }
   };
 
@@ -161,14 +168,15 @@ const DocumentsPage = () => {
     setOcrLoading((prev) => ({ ...prev, [docId]: true }));
     setError(null);
     const document = documents.find(doc => doc.id === docId);
+    
     if (!document) {
-      setError('Document not found');
+      showSnackbar('Document not found');
       setOcrLoading((prev) => ({ ...prev, [docId]: false }));
       return;
     }
+
     if (!document.documentType) {
-      setError('Document type not specified. Please re-upload the document with a document type.');
-      safeTimeout(() => setError(null), 5000);
+      showSnackbar('Document type not specified. Please re-upload the document with a document type.');
       setOcrLoading((prev) => ({ ...prev, [docId]: false }));
       return;
     }
@@ -180,15 +188,21 @@ const DocumentsPage = () => {
           documentType: response.data.documentType,
           extractedData: response.data.extractedData || {},
           formatValidation: response.data.formatValidation || null,
+          originalExtractedData: response.data.originalExtractedData || null,
+          documentLanguage: response.data.documentLanguage || null,
           model: response.data.model,
           quality: response.data.quality || null,
         },
       }));
+
+      showSnackbar(
+        `OCR extraction completed for "${docName}" as ${document.documentType}`,
+        'success'
+      );
       setSuccessMessage(`OCR extraction completed for "${docName}" as ${document.documentType}`);
       safeTimeout(() => setSuccessMessage(null), 5000);
     } catch (err) {
-      setError(err.message || 'OCR extraction failed');
-      safeTimeout(() => setError(null), 5000);
+      showSnackbar(err.message || 'OCR extraction failed');
     } finally {
       setOcrLoading((prev) => ({ ...prev, [docId]: false }));
     }
@@ -200,8 +214,7 @@ const DocumentsPage = () => {
     const isImage = typeof mimetype === 'string' && mimetype.startsWith('image/');
     const isPdf = mimetype === 'application/pdf';
     if (!isImage && !isPdf) {
-      setError('Security check is only supported for PDF and image files');
-      safeTimeout(() => setError(null), 5000);
+      showSnackbar('Security check is only supported for PDF and image files');
       setTamperingLoading((prev) => ({ ...prev, [docId]: false }));
       return;
     }
@@ -220,11 +233,17 @@ const DocumentsPage = () => {
           cached: response.data.cached,
         },
       }));
+
+      showSnackbar(
+        `${isImage ? 'Image' : 'PDF'} security check completed for "${docName}"${
+          response.data.cached ? ' (cached)' : ''
+        }`,
+        'success'
+      );
       setSuccessMessage(`${isImage ? 'Image' : 'PDF'} security check completed for "${docName}"${response.data.cached ? ' (cached)' : ''}`);
       safeTimeout(() => setSuccessMessage(null), 5000);
     } catch (err) {
-      setError(err.message || 'Security check failed');
-      safeTimeout(() => setError(null), 5000);
+      showSnackbar(err.message || 'Security check failed');
     } finally {
       setTamperingLoading((prev) => ({ ...prev, [docId]: false }));
     }
@@ -322,7 +341,7 @@ const DocumentsPage = () => {
           <Box sx={{ flex: 1 }}>
             <Typography variant="subtitle1" fontWeight={600}>{userInfo.username}</Typography>
             <Typography variant="body2" color="text.secondary">
-              {userInfo.mobile} &middot; {new Date(userInfo.dob).toLocaleDateString()} &middot; {userInfo.address}
+              {userInfo.mobile} &middot; {new Date(userInfo.dob).toLocaleDateString()} &middot; {userInfo.pan} &middot; ₹{Number(userInfo.salary).toLocaleString()} &middot; {userInfo.address}
             </Typography>
           </Box>
           <Button variant="outlined" size="small" onClick={handleEditUserInfo} startIcon={<EditIcon />}>
@@ -330,6 +349,8 @@ const DocumentsPage = () => {
           </Button>
         </Paper>
       )}
+
+      <Snackbar message={snackbar?.message} type={snackbar?.type} onClose={() => setSnackbar(null)} />
 
       {/* Alerts */}
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
@@ -497,16 +518,23 @@ const DocumentsPage = () => {
               {/* Right: Data + Security Panel */}
               <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
                 {/* OCR Results */}
-                {ocrResults[doc.id] && (
+                {ocrResults[doc.id] && (() => {
+                  const displayData = showOriginal[doc.id] && ocrResults[doc.id].originalExtractedData
+                    ? ocrResults[doc.id].originalExtractedData
+                    : ocrResults[doc.id].extractedData;
+                  return (
                   <Paper sx={{ borderRadius: 2 }}>
                     <Box sx={{ p: 1.5, bgcolor: 'grey.50', borderBottom: 1, borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1 }}>
                       <Typography variant="subtitle2">Extracted Data</Typography>
                       {ocrResults[doc.id].documentType && (
                         <Chip label={formatDocType(ocrResults[doc.id].documentType)} size="small" color="primary" />
                       )}
+                      {ocrResults[doc.id].documentLanguage && ocrResults[doc.id].documentLanguage !== 'English' && (
+                        <Chip label={ocrResults[doc.id].documentLanguage} size="small" variant="outlined" color="warning" />
+                      )}
                     </Box>
                     <Box sx={{ p: 2 }}>
-                      {Object.keys(ocrResults[doc.id].extractedData).length > 0 ? (
+                      {Object.keys(displayData).length > 0 ? (
                         ocrResults[doc.id].documentType === 'SALARY_SLIP' &&
                         (Array.isArray(ocrResults[doc.id].extractedData.earnings) ||
                          Array.isArray(ocrResults[doc.id].extractedData.deductions)) ? (
@@ -517,10 +545,10 @@ const DocumentsPage = () => {
                             {ocrResults[doc.id].extractedData.employeeId && (
                               <Typography variant="body2"><strong>Employee ID:</strong> {ocrResults[doc.id].extractedData.employeeId}</Typography>
                             )}
-                            {ocrResults[doc.id].extractedData.monthYear && (
-                              <Typography variant="body2"><strong>Period:</strong> {ocrResults[doc.id].extractedData.monthYear}</Typography>
+                            {displayData.monthYear && (
+                              <Typography variant="body2"><strong>Period:</strong> {displayData.monthYear}</Typography>
                             )}
-                            {Array.isArray(ocrResults[doc.id].extractedData.earnings) && (
+                            {Array.isArray(displayData.earnings) && (
                               <Box sx={{ mt: 2 }}>
                                 <Typography variant="subtitle2" gutterBottom>Earnings</Typography>
                                 <TableContainer component={Paper} variant="outlined">
@@ -532,7 +560,7 @@ const DocumentsPage = () => {
                                       </TableRow>
                                     </TableHead>
                                     <TableBody>
-                                      {ocrResults[doc.id].extractedData.earnings.map((item, i) => (
+                                      {displayData.earnings.map((item, i) => (
                                         <TableRow key={i}>
                                           <TableCell>{item.component}</TableCell>
                                           <TableCell align="right">{typeof item.amount === 'number' ? item.amount.toLocaleString() : item.amount}</TableCell>
@@ -543,7 +571,7 @@ const DocumentsPage = () => {
                                 </TableContainer>
                               </Box>
                             )}
-                            {Array.isArray(ocrResults[doc.id].extractedData.deductions) && (
+                            {Array.isArray(displayData.deductions) && (
                               <Box sx={{ mt: 2 }}>
                                 <Typography variant="subtitle2" gutterBottom>Deductions</Typography>
                                 <TableContainer component={Paper} variant="outlined">
@@ -555,7 +583,7 @@ const DocumentsPage = () => {
                                       </TableRow>
                                     </TableHead>
                                     <TableBody>
-                                      {ocrResults[doc.id].extractedData.deductions.map((item, i) => (
+                                      {displayData.deductions.map((item, i) => (
                                         <TableRow key={i}>
                                           <TableCell>{item.component}</TableCell>
                                           <TableCell align="right">{typeof item.amount === 'number' ? item.amount.toLocaleString() : item.amount}</TableCell>
@@ -567,8 +595,8 @@ const DocumentsPage = () => {
                               </Box>
                             )}
                             <Box sx={{ mt: 2, borderTop: 1, borderColor: 'divider', pt: 1 }}>
-                              {ocrResults[doc.id].extractedData.totalEarnings != null && (
-                                <Typography variant="body2"><strong>Total Earnings:</strong> {typeof ocrResults[doc.id].extractedData.totalEarnings === 'number' ? ocrResults[doc.id].extractedData.totalEarnings.toLocaleString() : ocrResults[doc.id].extractedData.totalEarnings}</Typography>
+                              {displayData.totalEarnings != null && (
+                                <Typography variant="body2"><strong>Total Earnings:</strong> {typeof displayData.totalEarnings === 'number' ? displayData.totalEarnings.toLocaleString() : displayData.totalEarnings}</Typography>
                               )}
                               {ocrResults[doc.id].extractedData.totalDeductions != null && (
                                 <Typography variant="body2"><strong>Total Deductions:</strong> {typeof ocrResults[doc.id].extractedData.totalDeductions === 'number' ? ocrResults[doc.id].extractedData.totalDeductions.toLocaleString() : ocrResults[doc.id].extractedData.totalDeductions}</Typography>
@@ -619,16 +647,19 @@ const DocumentsPage = () => {
                       )}
                     </Box>
                     <Divider />
-                    {/* <Box sx={{ p: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Box sx={{ p: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Typography variant="caption" color="text.secondary">Model: {ocrResults[doc.id].model}</Typography>
-                      <Button size="small"
+                      <Button
+                        size="sm"
                         onClick={async () => { await handleValidateOCR(doc.id, doc.originalName); }}
-                        disabled={validateLoading[doc.id]}>
-                        {validateLoading[doc.id] ? 'Validating...' : 'Validate'}
+                        loading={validateLoading[doc.id]}
+                      >
+                        Validate
                       </Button>
-                    </Box> */}
+                    </Box>
                   </Paper>
-                )}
+                  );
+                })()}
 
                 {/* Validation Results */}
                 {validationResults[doc.id] && (

@@ -202,6 +202,8 @@ const extractStructured = asyncHandler(async (req, res) => {
       documentId: document.id,
       documentType,
       detectedDocumentType: detectedType,
+      documentLanguage: result.data.documentLanguage || null,
+      originalExtractedData: result.data.originalExtractedData || null,
       extractedData: extractedFields,
       model: result.model,
       formatValidation,

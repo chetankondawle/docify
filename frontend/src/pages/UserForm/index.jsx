@@ -11,7 +11,14 @@ import Box from '@mui/material/Box';
 
 const UserFormPage = () => {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({ username: '', mobile: '', dob: '', address: '' });
+  const [formData, setFormData] = useState({
+    username: '',
+    mobile: '',
+    dob: '',
+    pan: '',
+    salary: '',
+    address: '',
+  });
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -32,6 +39,10 @@ const UserFormPage = () => {
     if (!formData.mobile.trim()) { setError('Mobile number is required'); return false; }
     if (!/^[0-9]{10}$/.test(formData.mobile)) { setError('Mobile number must be 10 digits'); return false; }
     if (!formData.dob) { setError('Date of birth is required'); return false; }
+    if (!formData.pan.trim()) { setError('PAN number is required'); return false; }
+    if (!/^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/.test(formData.pan)) { setError('PAN must be 5 letters + 4 digits + 1 letter (e.g., AAAPZ1234C)'); return false; }
+    if (!formData.salary.trim()) { setError('Salary is required'); return false; }
+    if (!/^\d+(\.\d{1,2})?$/.test(formData.salary)) { setError('Salary must be a valid number (e.g., 50000 or 50000.50)'); return false; }
     if (!formData.address.trim()) { setError('Address is required'); return false; }
     return true;
   };
@@ -92,6 +103,31 @@ const UserFormPage = () => {
             onChange={handleInputChange}
             disabled={loading}
             InputLabelProps={{ shrink: true }}
+            fullWidth
+            required
+          />
+          <TextField
+            label="PAN Number"
+            name="pan"
+            value={formData.pan}
+            onChange={(e) => {
+              const val = e.target.value.toUpperCase();
+              setFormData((prev) => ({ ...prev, pan: val }));
+              setError(null);
+            }}
+            placeholder="e.g., AAAPZ1234C"
+            disabled={loading}
+            inputProps={{ maxLength: 10 }}
+            fullWidth
+            required
+          />
+          <TextField
+            label="Monthly Salary (₹)"
+            name="salary"
+            value={formData.salary}
+            onChange={handleInputChange}
+            placeholder="e.g., 50000"
+            disabled={loading}
             fullWidth
             required
           />

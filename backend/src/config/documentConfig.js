@@ -82,7 +82,8 @@ const documentTypeConfig = {
         label: 'PAN Number',
         aliases: ['pan_number', 'pan', 'pan_no', 'pannumber'],
         type: 'text',
-        matchWith: [],
+        matchWith: ['pan'],
+        matchStrategy: 'exact',
         priority: 'high',
       },
       dateOfBirth: {
@@ -190,8 +191,9 @@ const documentTypeConfig = {
       },
       employeePanNumber: {
         label: 'Employee PAN',
-        aliases: ['employee_pan_number', 'pan', 'pan_number', 'employeepannumber'],
+        aliases: ['employee_pan_number', 'pan', 'pan_number', 'employeepannumber', 'pan no', 'pan no.', 'income tax pan'],
         type: 'text',
+        matchWith: ['pan'],
         priority: 'low',
       },
       earnings: {
@@ -216,13 +218,9 @@ const documentTypeConfig = {
         label: 'Net Salary',
         aliases: ['net_salary', 'net', 'netsalary', 'total', 'take home', 'net pay', 'net amount', 'salary credited', 'amount paid'],
         type: 'number',
+        matchWith: ['salary'],
+        matchStrategy: 'numeric',
         priority: 'medium',
-      },
-      employeePanNumber: {
-        label: 'Employee PAN',
-        aliases: ['employee_pan_number', 'pan', 'pan_number', 'employeepannumber', 'pan no', 'pan no.', 'income tax pan'],
-        type: 'text',
-        priority: 'low',
       },
     },
   },
