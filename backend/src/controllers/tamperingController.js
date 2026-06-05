@@ -25,15 +25,6 @@ const checkPDFTampering = asyncHandler(async (req, res) => {
     return sendError(res, 'Document is not a PDF', 400);
   }
 
-  // Check if tampering check already done
-  if (document.pdfTampering) {
-    return sendSuccess(res, {
-      documentId: document.id,
-      ...document.pdfTampering,
-      cached: true,
-    }, 'PDF tampering check retrieved from cache');
-  }
-
   try {
     logger.info(`Running tampering check for document ID: ${id}`);
 

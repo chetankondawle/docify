@@ -980,16 +980,6 @@ const DocumentsPage = () => {
                       <Typography variant="body2" color="text.secondary">
                         No inconsistencies found across {Object.keys(validationResults.__crossValidation__.validations || {}).length} documents
                       </Typography>
-                      <Typography variant="body2">{issue.message}</Typography>
-                      {issue.details && (
-                        <Box sx={{ mt: 1 }}>
-                          {Object.entries(issue.details).map(([value, docIds]) => (
-                            <Typography key={value} variant="caption" display="block">
-                              &quot;{value}&quot; found in: {Array.isArray(docIds) ? docIds.map(id => getDocLabel(id)).join(', ') : getDocLabel(docIds)}
-                            </Typography>
-                          ))}
-                        </Box>
-                      )}
                     </Box>
                   )}
                 </Box>

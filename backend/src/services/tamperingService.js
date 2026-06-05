@@ -104,8 +104,8 @@ const checkMetadataConsistency = async (filePath) => {
 
     return {
       passed: !inconsistent,
-      creationDate: creationDate.toISOString() || 'Unknown',
-      modificationDate: modDate.toISOString() || 'Unknown',
+      creationDate: creationDate ? creationDate.toISOString() : 'Unknown',
+      modificationDate: modDate ? modDate.toISOString() : 'Unknown',
       producer: info.info.Producer || 'Unknown',
       inconsistent,
       message: inconsistent
@@ -113,7 +113,7 @@ const checkMetadataConsistency = async (filePath) => {
         : 'Metadata dates consistent',
       risk: inconsistent ? 25 : 0,
     };
-  } catch (error) {
+  } catch (error) {    
     return {
       passed: false,
       message: 'Failed to parse metadata',
