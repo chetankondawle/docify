@@ -412,27 +412,34 @@ const validateFieldFormat = (value, rules) => {
   }
 
   const strValue = String(value).trim();
+  const digitsOnly = strValue.replace(/\D/g, '');
 
   rules.forEach((rule) => {
     switch (rule.type) {
-      case 'length':
-        if (strValue.length !== rule.value) {
+      case 'length': {
+        const val = rule.stripNonDigits ? digitsOnly : strValue;
+        if (val.length !== rule.value) {
           errors.push(rule.message || `Must be exactly ${rule.value} characters`);
         }
         break;
+      }
 
-      case 'numeric':
-        if (!/^\d+$/.test(strValue)) {
+      case 'numeric': {
+        const val = rule.stripNonDigits ? digitsOnly : strValue;
+        if (!/^\d+$/.test(val)) {
           errors.push(rule.message || 'Must only contain digits (0-9)');
         }
         break;
+      }
 
-      case 'notStartWith':
-        const startsWithInvalid = rule.values.some((prefix) => strValue.startsWith(prefix));
+      case 'notStartWith': {
+        const val = rule.stripNonDigits ? digitsOnly : strValue;
+        const startsWithInvalid = rule.values.some((prefix) => val.startsWith(prefix));
         if (startsWithInvalid) {
           errors.push(rule.message || `Cannot start with ${rule.values.join(' or ')}`);
         }
         break;
+      }
 
       case 'pattern':
         if (!new RegExp(rule.value).test(strValue)) {

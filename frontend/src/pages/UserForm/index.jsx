@@ -2,175 +2,119 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from '@components/common/Button';
 import { saveUserInfo, getUserInfo } from '@services/userFormService';
-import styles from './UserForm.module.css';
+import Container from '@mui/material/Container';
+import Paper from '@mui/material/Paper';
+import Typography from '@mui/material/Typography';
+import TextField from '@mui/material/TextField';
+import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
 
 const UserFormPage = () => {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({
-    username: '',
-    mobile: '',
-    dob: '',
-    address: '',
-  });
+  const [formData, setFormData] = useState({ username: '', mobile: '', dob: '', address: '' });
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Load existing user info if available
     const existingData = getUserInfo();
-    if (existingData) {
-      setFormData(existingData);
-    }
+    if (existingData) setFormData(existingData);
   }, []);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
     setError(null);
   };
 
   const validateForm = () => {
-    if (!formData.username.trim()) {
-      setError('Username is required');
-      return false;
-    }
-    if (!formData.mobile.trim()) {
-      setError('Mobile number is required');
-      return false;
-    }
-    if (!/^[0-9]{10}$/.test(formData.mobile)) {
-      setError('Mobile number must be 10 digits');
-      return false;
-    }
-    if (!formData.dob) {
-      setError('Date of birth is required');
-      return false;
-    }
-    if (!formData.address.trim()) {
-      setError('Address is required');
-      return false;
-    }
+    if (!formData.username.trim()) { setError('Username is required'); return false; }
+    if (!formData.mobile.trim()) { setError('Mobile number is required'); return false; }
+    if (!/^[0-9]{10}$/.test(formData.mobile)) { setError('Mobile number must be 10 digits'); return false; }
+    if (!formData.dob) { setError('Date of birth is required'); return false; }
+    if (!formData.address.trim()) { setError('Address is required'); return false; }
     return true;
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError(null);
-    setSuccessMessage(null);
-
+    e.preventDefault(); setError(null); setSuccessMessage(null);
     if (!validateForm()) return;
-
     try {
       setLoading(true);
       saveUserInfo(formData);
       setSuccessMessage('User information saved successfully!');
-      setTimeout(() => {
-        navigate('/documents');
-      }, 1500);
+      setTimeout(() => { navigate('/documents'); }, 1500);
     } catch (err) {
       setError(err.message || 'Failed to save user information');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   return (
-    <div className={styles.page}>
-      <section className={styles.formSection}>
-        <h1 className={styles.title}>User Information</h1>
-        <p className={styles.subtitle}>
+    <Container maxWidth="sm" sx={{ py: 4 }}>
+      <Paper sx={{ p: 4, borderRadius: 2 }}>
+        <Typography variant="h4" gutterBottom>
+          User Information
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
           Please provide your information before uploading documents
-        </p>
+        </Typography>
 
-        {error && (
-          <div className={styles.alert} data-type="error">
-            {error}
-          </div>
-        )}
+        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        {successMessage && <Alert severity="success" sx={{ mb: 2 }}>{successMessage}</Alert>}
 
-        {successMessage && (
-          <div className={styles.alert} data-type="success">
-            {successMessage}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className={styles.form}>
-          <div className={styles.formGroup}>
-            <label htmlFor="username" className={styles.label}>
-              Username
-            </label>
-            <input
-              type="text"
-              id="username"
-              name="username"
-              value={formData.username}
-              onChange={handleInputChange}
-              className={styles.input}
-              placeholder="Enter your full name"
-              disabled={loading}
-            />
-          </div>
-
-          <div className={styles.formGroup}>
-            <label htmlFor="mobile" className={styles.label}>
-              Mobile Number
-            </label>
-            <input
-              type="tel"
-              id="mobile"
-              name="mobile"
-              value={formData.mobile}
-              onChange={handleInputChange}
-              className={styles.input}
-              placeholder="10 digit mobile number"
-              disabled={loading}
-              maxLength="10"
-            />
-          </div>
-
-          <div className={styles.formGroup}>
-            <label htmlFor="dob" className={styles.label}>
-              Date of Birth
-            </label>
-            <input
-              type="date"
-              id="dob"
-              name="dob"
-              value={formData.dob}
-              onChange={handleInputChange}
-              className={styles.input}
-              disabled={loading}
-            />
-          </div>
-
-          <div className={styles.formGroup}>
-            <label htmlFor="address" className={styles.label}>
-              Address
-            </label>
-            <textarea
-              id="address"
-              name="address"
-              value={formData.address}
-              onChange={handleInputChange}
-              className={styles.textarea}
-              placeholder="Enter your address"
-              disabled={loading}
-              rows="4"
-            />
-          </div>
-
-          <div className={styles.actions}>
+        <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+          <TextField
+            label="Username"
+            name="username"
+            value={formData.username}
+            onChange={handleInputChange}
+            placeholder="Enter your full name"
+            disabled={loading}
+            fullWidth
+            required
+          />
+          <TextField
+            label="Mobile Number"
+            name="mobile"
+            value={formData.mobile}
+            onChange={handleInputChange}
+            placeholder="10 digit mobile number"
+            disabled={loading}
+            inputProps={{ maxLength: 10 }}
+            fullWidth
+            required
+          />
+          <TextField
+            label="Date of Birth"
+            name="dob"
+            type="date"
+            value={formData.dob}
+            onChange={handleInputChange}
+            disabled={loading}
+            InputLabelProps={{ shrink: true }}
+            fullWidth
+            required
+          />
+          <TextField
+            label="Address"
+            name="address"
+            value={formData.address}
+            onChange={handleInputChange}
+            placeholder="Enter your address"
+            disabled={loading}
+            multiline
+            rows={4}
+            fullWidth
+            required
+          />
+          <Box sx={{ mt: 1 }}>
             <Button type="submit" loading={loading}>
               Continue to Documents
             </Button>
-          </div>
-        </form>
-      </section>
-    </div>
+          </Box>
+        </Box>
+      </Paper>
+    </Container>
   );
 };
 
