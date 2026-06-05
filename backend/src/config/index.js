@@ -27,7 +27,7 @@ const config = {
   gemini: {
     apiKey: process.env.GEMINI_API_KEY,
     model: process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp',
-    maxRetries: parseInt(process.env.GEMINI_MAX_RETRIES, 10) || 3,
+    maxRetries: parseInt(process.env.GEMINI_MAX_RETRIES, 10) || 1,
     timeoutMs: parseInt(process.env.GEMINI_TIMEOUT_MS, 10) || 30000,
   },
   upload: {

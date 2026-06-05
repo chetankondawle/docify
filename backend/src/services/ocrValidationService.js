@@ -188,6 +188,10 @@ const validateField = (value, fieldName, expectedType, fieldConfig) => {
 };
 
 const validateType = (value, expectedType, fieldName) => {
+  if (Array.isArray(expectedType)) {
+    return { valid: Array.isArray(value), message: `"${fieldName}" should be an array` };
+  }
+
   const str = String(value).trim();
 
   const typeLower = expectedType.toLowerCase();

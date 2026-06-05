@@ -153,7 +153,7 @@ const extractStructured = asyncHandler(async (req, res) => {
       document.mimetype,
       schemaConfig.schema
     );
-
+    logger.info(`Document gemini structured OCR result for doc ${id}: ${JSON.stringify(result)}`)
     // Detect document type mismatch
     const detectedType = result.data?.detectedDocumentType;
     let typeMismatch = null;
