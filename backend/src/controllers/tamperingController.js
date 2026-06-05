@@ -40,18 +40,42 @@ const checkPDFTampering = asyncHandler(async (req, res) => {
     // Run tampering check
     const tamperingResult = await tamperingService.checkPDFTampering(document.path, document.documentType);
 
-    // Update document with tampering check results
-    await documentService.updatePDFTamperingResults(id, tamperingResult);
+    // Secondary check: Gemini forensic clarification
+    let aiAnalysis = null;
+    try {
+      aiAnalysis = await geminiService.analyzePDFForTampering(
+        document.path,
+        tamperingResult.checks
+      );
+    } catch (geminiErr) {
+      logger.warn(`Gemini PDF analysis skipped: ${geminiErr.message}`);
+      aiAnalysis = { success: false, verdict: 'unknown', error: geminiErr.message };
+    }
 
-    logger.info(`PDF tampering check completed. Risk level: ${tamperingResult.riskLevel}`);
+    // Combine: heuristic stays primary; Gemini overrides 'safe' if it strongly disagrees
+    const aiTampered = aiAnalysis && (aiAnalysis.verdict === 'likely_tampered' || aiAnalysis.verdict === 'ai_generated');
+    const aiSuspicious = aiAnalysis && aiAnalysis.verdict === 'suspicious';
+    const finalSafe = tamperingResult.safe && !aiTampered && !(aiSuspicious && aiAnalysis.confidence === 'high');
+
+    const finalResult = {
+      ...tamperingResult,
+      safe: finalSafe,
+      aiAnalysis,
+    };
+
+    // Update document with tampering check results
+    await documentService.updatePDFTamperingResults(id, finalResult);
+
+    logger.info(`PDF tampering check completed. Risk level: ${tamperingResult.riskLevel}, AI verdict: ${aiAnalysis?.verdict || 'n/a'}`);
 
     sendSuccess(res, {
       documentId: document.id,
-      safe: tamperingResult.safe,
+      safe: finalResult.safe,
       riskScore: tamperingResult.riskScore,
       riskLevel: tamperingResult.riskLevel,
       checks: tamperingResult.checks,
       summary: tamperingResult.summary,
+      aiAnalysis,
       referenceComparison: tamperingResult.referenceComparison,
       cached: false,
     }, 'PDF tampering check completed successfully');

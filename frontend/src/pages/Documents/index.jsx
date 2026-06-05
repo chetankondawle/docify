@@ -677,8 +677,7 @@ const DocumentsPage = () => {
                       )}
                     </Box>
                     <Divider />
-                    <Box sx={{ p: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Typography variant="caption" color="text.secondary">Model: {ocrResults[doc.id].model}</Typography>
+                    <Box sx={{ p: 1.5, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
                       <Button
                         size="sm"
                         onClick={async () => { await handleValidateOCR(doc.id, doc.originalName); }}

@@ -103,6 +103,7 @@ const updatePDFTamperingResults = async (id, tamperingResult) => {
       riskLevel: tamperingResult.riskLevel,
       checks: tamperingResult.checks,
       summary: tamperingResult.summary,
+      aiAnalysis: tamperingResult.aiAnalysis || null,
       checkedAt: new Date().toISOString(),
     };
 

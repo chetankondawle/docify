@@ -380,6 +380,106 @@ Return ONLY this JSON, no markdown, no code blocks:
   }
 };
 
+const analyzePDFForTampering = async (filePath, heuristicChecks) => {
+  try {
+    logger.info(`Starting Gemini PDF tampering analysis for: ${filePath}`);
+
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+
+    const analyzeFn = async () => {
+      const model = initGemini();
+      const fileBuffer = fs.readFileSync(filePath);
+      const base64Data = fileBuffer.toString('base64');
+
+      const pdfPart = {
+        inlineData: { data: base64Data, mimeType: 'application/pdf' },
+      };
+
+      const heuristicSummary = JSON.stringify(heuristicChecks, null, 2);
+
+      const prompt = `You are checking a PDF document for signs of tampering or forgery. Review the document content and the automated checks below, then give a short, plain-language verdict.
+
+Automated checks:
+${heuristicSummary}
+
+Look for these tampering indicators specifically:
+- Text that appears misaligned, has inconsistent font sizes or styles
+- Numbers or dates that look altered or overwritten
+- Logos or seals that appear cut-and-pasted
+- Inconsistent metadata or hidden layers
+- Any visible edit marks or revision history
+- Mismatched formatting between different sections
+- Unusual spacing or kerning that suggests text replacement
+- Digital signature anomalies or missing signature properties
+
+Rules for your response:
+- "explanation": ONE sentence, max 20 words, plain English. Say what you see, not how you checked.
+- "visualFindings": up to 3 items. Each item max 10 words. Plain English. Only include things you can actually see in the document. Empty array if nothing notable.
+- "regionsOfConcern": up to 2 items. Each item max 8 words, naming where in the document (e.g. "signature area", "date field", "top header"). Empty array if none.
+- "verdict": one of "authentic", "suspicious", "likely_tampered", "ai_generated".
+- "confidence": one of "low", "medium", "high".
+- "agreesWithHeuristics": true or false.
+
+Examples of good explanations:
+- "Document appears genuine with consistent formatting throughout."
+- "The date field text looks different from the surrounding text."
+- "Signature area shows signs of digital alteration."
+
+Return ONLY this JSON, no markdown, no code blocks:
+{
+  "verdict": "authentic" | "suspicious" | "likely_tampered" | "ai_generated",
+  "confidence": "low" | "medium" | "high",
+  "visualFindings": [],
+  "regionsOfConcern": [],
+  "agreesWithHeuristics": true | false,
+  "explanation": ""
+}`;
+
+      const result = await model.generateContent([prompt, pdfPart]);
+      const response = await result.response;
+      let text = response.text();
+      text = text.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim();
+
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch (parseError) {
+        logger.warn('Failed to parse Gemini PDF tampering response as JSON');
+        parsed = {
+          verdict: 'unknown',
+          confidence: 'low',
+          visualFindings: [],
+          regionsOfConcern: [],
+          agreesWithHeuristics: null,
+          explanation: text.slice(0, 500),
+          parseError: parseError.message,
+        };
+      }
+
+      return { ...parsed };
+    };
+
+    const result = await withRetry(analyzeFn, 'PDF Tampering analysis');
+    logger.info(`Gemini PDF tampering analysis verdict: ${result.verdict}`);
+
+    return {
+      success: true,
+      ...result,
+      model: config.gemini.model,
+    };
+  } catch (error) {
+    logger.error('Gemini PDF tampering analysis failed:', error.message);
+    return {
+      success: false,
+      verdict: 'unknown',
+      confidence: 'low',
+      error: error.message,
+    };
+  }
+};
+
 /**
  * Side-by-side comparison of a target document against reference sample images.
  * Sends target + up to 3 reference images to Gemini for forensic document comparison.
@@ -510,5 +610,6 @@ module.exports = {
   extractTextFromDocument,
   extractStructuredData,
   analyzeImageForTampering,
+  analyzePDFForTampering,
   compareDocumentWithReference,
 };
