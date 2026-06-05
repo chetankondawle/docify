@@ -13,8 +13,11 @@ router.use('/ocr', ocrRoutes);
 router.use('/tampering', tamperingRoutes);
 router.use('/validate', validateRoutes);
 
+const userRoutes = require('./userRoutes');
+
+router.use('/users', userRoutes);
+
 // Register additional v1 routes here:
-// router.use('/users', userRoutes);
 // router.use('/auth', authRoutes);
 
 module.exports = router;

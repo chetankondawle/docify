@@ -1,21 +1,9 @@
-const path = require('path');
+const { Document } = require('../models');
 const { getFileCategory, formatFileSize } = require('../utils/fileHelpers');
+const logger = require('../utils/logger');
 
-// In-memory storage for demo purposes
-// In production, use a database (MongoDB, PostgreSQL, etc.)
-const documents = [];
-let nextId = 1;
-
-/**
- * Save document metadata
- * @param {Object} file - Multer file object
- * @param {Object} user - User info (optional for now)
- * @param {string} documentType - Document type (e.g., 'AADHAAR_CARD', 'PAN_CARD')
- * @returns {Object} Document metadata
- */
-const saveDocument = (file, user = null, documentType = null) => {
-  const document = {
-    id: nextId++,
+const saveDocument = async (file, user = null, documentType = null) => {
+  const docData = {
     originalName: file.originalname,
     filename: file.filename,
     path: file.path,
@@ -23,135 +11,164 @@ const saveDocument = (file, user = null, documentType = null) => {
     size: file.size,
     sizeFormatted: formatFileSize(file.size),
     category: getFileCategory(file.mimetype),
-    documentType: documentType, // Store the document type selected during upload
-    uploadedBy: user?.id || null,
-    uploadedAt: new Date().toISOString(),
-    ocrData: null, // OCR extracted data (JSON)
-    ocrProcessed: false, // OCR processing status
-    ocrError: null, // OCR error if any
-    formatValidation: null, // Document format validation results
-    pdfTampering: null, // PDF tampering check results
-    imageTampering: null, // Image tampering check results
+    documentType: documentType,
+    userId: user?.id || null,
   };
 
-  documents.push(document);
-  return document;
+  try {
+    const document = await Document.create(docData);
+    return document.get({ plain: true });
+  } catch (error) {
+    logger.error('Failed to save document to database:', error.message);
+    const fallback = {
+      id: Date.now(),
+      ...docData,
+      uploadedAt: new Date().toISOString(),
+      ocrData: null,
+      ocrProcessed: false,
+      ocrError: null,
+      formatValidation: null,
+      pdfTampering: null,
+      imageTampering: null,
+    };
+    return fallback;
+  }
 };
 
-/**
- * Update document with OCR results
- * @param {number} id - Document ID
- * @param {Object} ocrResult - OCR extraction result
- * @returns {Object|null} Updated document or null
- */
-const updateDocumentOCR = (id, ocrResult) => {
-  const document = getDocumentById(id);
-  if (!document) return null;
+const updateDocumentOCR = async (id, ocrResult) => {
+  try {
+    const document = await Document.findByPk(id);
+    if (!document) return null;
 
-  document.ocrData = ocrResult.data || null;
-  document.ocrProcessed = true;
-  document.ocrError = ocrResult.error || null;
-  document.ocrModel = ocrResult.model || null;
-  document.ocrProcessedAt = new Date().toISOString();
+    document.ocrData = ocrResult.data || null;
+    document.ocrProcessed = true;
+    document.ocrError = ocrResult.error || null;
+    document.ocrModel = ocrResult.model || null;
+    document.ocrProcessedAt = new Date();
 
-  return document;
+    await document.save();
+    return document.get({ plain: true });
+  } catch (error) {
+    logger.error(`Failed to update OCR for document ${id}:`, error.message);
+    return null;
+  }
 };
 
-/**
- * Get all documents
- * @returns {Array} List of documents
- */
-const getAllDocuments = () => {
-  return documents;
+const getAllDocuments = async (userId = null) => {
+  try {
+    const where = userId ? { userId } : {};
+    const documents = await Document.findAll({
+      where,
+      order: [['createdAt', 'DESC']],
+    });
+    return documents.map(d => d.get({ plain: true }));
+  } catch (error) {
+    logger.error('Failed to fetch documents from database:', error.message);
+    return [];
+  }
 };
 
-/**
- * Get document by ID
- * @param {number} id
- * @returns {Object|null}
- */
-const getDocumentById = (id) => {
-  return documents.find((doc) => doc.id === parseInt(id, 10)) || null;
+const getDocumentById = async (id) => {
+  try {
+    const document = await Document.findByPk(id);
+    return document ? document.get({ plain: true }) : null;
+  } catch (error) {
+    logger.error(`Failed to fetch document ${id}:`, error.message);
+    return null;
+  }
 };
 
-/**
- * Delete document by ID
- * @param {number} id
- * @returns {Object|null} Deleted document or null
- */
-const deleteDocument = (id) => {
-  const index = documents.findIndex((doc) => doc.id === parseInt(id, 10));
-  if (index === -1) return null;
+const deleteDocument = async (id) => {
+  try {
+    const document = await Document.findByPk(id);
+    if (!document) return null;
 
-  const [deleted] = documents.splice(index, 1);
-  return deleted;
+    const deleted = document.get({ plain: true });
+    await document.destroy();
+    return deleted;
+  } catch (error) {
+    logger.error(`Failed to delete document ${id}:`, error.message);
+    return null;
+  }
 };
 
-/**
- * Update document with PDF tampering check results
- * @param {number} id - Document ID
- * @param {Object} tamperingResult - Tampering check result
- * @returns {Object|null} Updated document or null
- */
-const updatePDFTamperingResults = (id, tamperingResult) => {
-  const document = getDocumentById(id);
-  if (!document) return null;
+const updatePDFTamperingResults = async (id, tamperingResult) => {
+  try {
+    const document = await Document.findByPk(id);
+    if (!document) return null;
 
-  document.pdfTampering = {
-    safe: tamperingResult.safe,
-    riskScore: tamperingResult.riskScore,
-    riskLevel: tamperingResult.riskLevel,
-    checks: tamperingResult.checks,
-    summary: tamperingResult.summary,
-    checkedAt: new Date().toISOString(),
-  };
+    document.pdfTampering = {
+      safe: tamperingResult.safe,
+      riskScore: tamperingResult.riskScore,
+      riskLevel: tamperingResult.riskLevel,
+      checks: tamperingResult.checks,
+      summary: tamperingResult.summary,
+      checkedAt: new Date().toISOString(),
+    };
 
-  return document;
+    await document.save();
+    return document.get({ plain: true });
+  } catch (error) {
+    logger.error(`Failed to update PDF tampering for document ${id}:`, error.message);
+    return null;
+  }
 };
 
-/**
- * Update document with image tampering check results
- * @param {number} id - Document ID
- * @param {Object} tamperingResult - Tampering check result
- * @returns {Object|null} Updated document or null
- */
-const updateImageTamperingResults = (id, tamperingResult) => {
-  const document = getDocumentById(id);
-  if (!document) return null;
+const updateImageTamperingResults = async (id, tamperingResult) => {
+  try {
+    const document = await Document.findByPk(id);
+    if (!document) return null;
 
-  document.imageTampering = {
-    safe: tamperingResult.safe,
-    riskScore: tamperingResult.riskScore,
-    riskLevel: tamperingResult.riskLevel,
-    format: tamperingResult.format,
-    checks: tamperingResult.checks,
-    aiAnalysis: tamperingResult.aiAnalysis || null,
-    referenceComparison: tamperingResult.referenceComparison || null,
-    summary: tamperingResult.summary,
-    checkedAt: new Date().toISOString(),
-  };
+    document.imageTampering = {
+      safe: tamperingResult.safe,
+      riskScore: tamperingResult.riskScore,
+      riskLevel: tamperingResult.riskLevel,
+      format: tamperingResult.format,
+      checks: tamperingResult.checks,
+      aiAnalysis: tamperingResult.aiAnalysis || null,
+      referenceComparison: tamperingResult.referenceComparison || null,
+      summary: tamperingResult.summary,
+      checkedAt: new Date().toISOString(),
+    };
 
-  return document;
+    await document.save();
+    return document.get({ plain: true });
+  } catch (error) {
+    logger.error(`Failed to update image tampering for document ${id}:`, error.message);
+    return null;
+  }
 };
 
-/**
- * Update document with format validation results
- * @param {number} id - Document ID
- * @param {Object} formatValidation - Format validation result
- * @returns {Object|null} Updated document or null
- */
-const updateDocumentFormatValidation = (id, formatValidation) => {
-  const document = getDocumentById(id);
-  if (!document) return null;
+const updateDocumentFormatValidation = async (id, formatValidation) => {
+  try {
+    const document = await Document.findByPk(id);
+    if (!document) return null;
 
-  document.formatValidation = {
-    valid: formatValidation.valid,
-    fieldResults: formatValidation.fieldResults,
-    message: formatValidation.message,
-    validatedAt: new Date().toISOString(),
-  };
+    document.formatValidation = {
+      valid: formatValidation.valid,
+      fieldResults: formatValidation.fieldResults,
+      message: formatValidation.message,
+      validatedAt: new Date().toISOString(),
+    };
 
-  return document;
+    await document.save();
+    return document.get({ plain: true });
+  } catch (error) {
+    logger.error(`Failed to update format validation for document ${id}:`, error.message);
+    return null;
+  }
+};
+
+const deleteDocumentsByUserId = async (userId) => {
+  try {
+    const documents = await Document.findAll({ where: { userId } });
+    const deleted = documents.map(d => d.get({ plain: true }));
+    await Document.destroy({ where: { userId } });
+    return deleted;
+  } catch (error) {
+    logger.error(`Failed to delete documents for user ${userId}:`, error.message);
+    return [];
+  }
 };
 
 module.exports = {
@@ -159,6 +176,7 @@ module.exports = {
   getAllDocuments,
   getDocumentById,
   deleteDocument,
+  deleteDocumentsByUserId,
   updateDocumentOCR,
   updateDocumentFormatValidation,
   updatePDFTamperingResults,

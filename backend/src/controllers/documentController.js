@@ -10,7 +10,7 @@ const uploadDocument = asyncHandler(async (req, res) => {
     return sendBadRequest(res, 'No file uploaded. Ensure the field is named "document" and is a valid file.');
   }
 
-  const { documentType } = req.body;
+  const { documentType, userId } = req.body;
 
   if (documentType) {
     const typeCheck = validate.documentType(documentType);
@@ -20,7 +20,7 @@ const uploadDocument = asyncHandler(async (req, res) => {
     }
   }
 
-  const document = documentService.saveDocument(req.file, req.user, documentType || null);
+  const document = await documentService.saveDocument(req.file, userId ? { id: userId } : null, documentType || null);
 
   sendCreated(res, {
     id: document.id,
@@ -36,7 +36,8 @@ const uploadDocument = asyncHandler(async (req, res) => {
 });
 
 const getDocuments = asyncHandler(async (req, res) => {
-  const documents = documentService.getAllDocuments();
+  const userId = req.query.userId || null;
+  const documents = await documentService.getAllDocuments(userId);
   const sanitized = documents.map(doc => ({
     id: doc.id,
     originalName: doc.originalName,
@@ -56,7 +57,7 @@ const getDocument = asyncHandler(async (req, res) => {
   const idCheck = validate.documentId(req.params.id);
   if (!idCheck.valid) return sendBadRequest(res, idCheck.message);
 
-  const document = documentService.getDocumentById(req.params.id);
+  const document = await documentService.getDocumentById(req.params.id);
   if (!document) {
     return sendNotFound(res, 'Document not found');
   }
@@ -68,7 +69,7 @@ const deleteDocument = asyncHandler(async (req, res) => {
   const idCheck = validate.documentId(req.params.id);
   if (!idCheck.valid) return sendBadRequest(res, idCheck.message);
 
-  const document = documentService.getDocumentById(req.params.id);
+  const document = await documentService.getDocumentById(req.params.id);
   if (!document) {
     return sendNotFound(res, 'Document not found');
   }
@@ -79,7 +80,7 @@ const deleteDocument = asyncHandler(async (req, res) => {
     logger.warn(`File deletion failed for ${document.path}: ${error.message}. Proceeding with record deletion.`);
   }
 
-  documentService.deleteDocument(req.params.id);
+  await documentService.deleteDocument(req.params.id);
 
   sendSuccess(res, null, 'Document deleted successfully');
 });

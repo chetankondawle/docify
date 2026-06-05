@@ -19,7 +19,7 @@ const extractOCR = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
   // Get document from service
-  const document = documentService.getDocumentById(id);
+  const document = await documentService.getDocumentById(id);
   
   if (!document) {
     return sendNotFound(res, 'Document not found');
@@ -47,7 +47,7 @@ const extractOCR = asyncHandler(async (req, res) => {
     );
 
     // Update document with OCR result
-    documentService.updateDocumentOCR(id, {
+    await documentService.updateDocumentOCR(id, {
       data: ocrResult.data,
       model: ocrResult.model,
     });
@@ -57,7 +57,7 @@ const extractOCR = asyncHandler(async (req, res) => {
       ocrResult.data.extractedData,
       ocrResult.data.documentType
     );
-    documentService.updateDocumentFormatValidation(id, formatValidation);
+    await documentService.updateDocumentFormatValidation(id, formatValidation);
 
     logger.info(`OCR extraction completed for document ID: ${id}`);
 
@@ -75,7 +75,7 @@ const extractOCR = asyncHandler(async (req, res) => {
     logger.error(`OCR extraction failed for document ID: ${id}`, error.message);
 
     // Save error in document
-    documentService.updateDocumentOCR(id, {
+    await documentService.updateDocumentOCR(id, {
       data: null,
       error: error.message,
     });
@@ -97,7 +97,7 @@ const extractStructured = asyncHandler(async (req, res) => {
     return sendBadRequest(res, 'documentType is required in the request body');
   }
 
-  const document = documentService.getDocumentById(id);
+  const document = await documentService.getDocumentById(id);
   
   if (!document) {
     return sendNotFound(res, 'Document not found');
@@ -178,7 +178,7 @@ const extractStructured = asyncHandler(async (req, res) => {
     logger.info(`Structured extraction completed for document ID: ${id}`);
 
     // Save structured OCR data to document
-    documentService.updateDocumentOCR(id, {
+    await documentService.updateDocumentOCR(id, {
       data: {
         documentType,
         extractedData: extractedFields,
@@ -192,7 +192,7 @@ const extractStructured = asyncHandler(async (req, res) => {
       extractedFields,
       documentType
     );
-    documentService.updateDocumentFormatValidation(id, formatValidation);
+    await documentService.updateDocumentFormatValidation(id, formatValidation);
 
     if (typeMismatch) {
       return sendError(res, typeMismatch.message, 400);
@@ -252,7 +252,7 @@ const batchExtractOCR = asyncHandler(async (req, res) => {
 
   for (const id of documentIds) {
     try {
-      const document = documentService.getDocumentById(id);
+      const document = await documentService.getDocumentById(id);
       
       if (!document) {
         errors.push({ id, error: 'Document not found' });
@@ -275,7 +275,7 @@ const batchExtractOCR = asyncHandler(async (req, res) => {
         document.mimetype
       );
 
-      documentService.updateDocumentOCR(id, {
+      await documentService.updateDocumentOCR(id, {
         data: ocrResult.data,
         model: ocrResult.model,
       });

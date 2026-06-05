@@ -8,7 +8,7 @@ import Paper from '@mui/material/Paper';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import ClearIcon from '@mui/icons-material/Clear';
 
-const FileUpload = ({ onUploadSuccess, onUploadError, selectedDocumentType }) => {
+const FileUpload = ({ onUploadSuccess, onUploadError, selectedDocumentType, userId }) => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -46,6 +46,7 @@ const FileUpload = ({ onUploadSuccess, onUploadError, selectedDocumentType }) =>
     const formData = new FormData();
     formData.append('document', selectedFile);
     formData.append('documentType', selectedDocumentType);
+    if (userId) formData.append('userId', userId);
     setUploading(true); setError(null);
     try {
       const response = await fetch('/api/v1/documents/upload', { method: 'POST', body: formData });

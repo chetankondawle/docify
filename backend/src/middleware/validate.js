@@ -14,8 +14,10 @@ const validate = {
   documentId: (value) => {
     if (value === undefined || value === null) return { valid: false, message: 'documentId is required' };
     const num = parseInt(value, 10);
-    if (isNaN(num) || num < 1) return { valid: false, message: `Invalid documentId "${value}". Must be a positive integer.` };
-    return { valid: true, parsed: num };
+    if (!isNaN(num) && num > 0) return { valid: true, parsed: num };
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (uuidRegex.test(value)) return { valid: true, parsed: value };
+    return { valid: false, message: `Invalid documentId "${value}". Must be a valid UUID or positive integer.` };
   },
 
   nonEmptyObject: (value, name) => {

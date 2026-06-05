@@ -14,7 +14,7 @@ const checkPDFTampering = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
   // Get document from service
-  const document = documentService.getDocumentById(id);
+  const document = await documentService.getDocumentById(id);
   
   if (!document) {
     return sendNotFound(res, 'Document not found');
@@ -41,7 +41,7 @@ const checkPDFTampering = asyncHandler(async (req, res) => {
     const tamperingResult = await tamperingService.checkPDFTampering(document.path, document.documentType);
 
     // Update document with tampering check results
-    documentService.updatePDFTamperingResults(id, tamperingResult);
+    await documentService.updatePDFTamperingResults(id, tamperingResult);
 
     logger.info(`PDF tampering check completed. Risk level: ${tamperingResult.riskLevel}`);
 
@@ -60,7 +60,7 @@ const checkPDFTampering = asyncHandler(async (req, res) => {
     logger.error(`PDF tampering check failed for document ID: ${id}`, error.message);
 
     // Save error in document
-    documentService.updatePDFTamperingResults(id, {
+    await documentService.updatePDFTamperingResults(id, {
       safe: false,
       riskLevel: 'unknown',
       summary: 'Tampering check failed',
@@ -78,7 +78,7 @@ const checkPDFTampering = asyncHandler(async (req, res) => {
 const checkImageTampering = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const document = documentService.getDocumentById(id);
+  const document = await documentService.getDocumentById(id);
 
   if (!document) {
     return sendNotFound(res, 'Document not found');
@@ -126,7 +126,7 @@ const checkImageTampering = asyncHandler(async (req, res) => {
       aiAnalysis,
     };
 
-    documentService.updateImageTamperingResults(id, finalResult);
+    await documentService.updateImageTamperingResults(id, finalResult);
 
     logger.info(`Image tampering check completed. Risk: ${tamperingResult.riskLevel}, AI verdict: ${aiAnalysis?.verdict || 'n/a'}`);
 
@@ -146,7 +146,7 @@ const checkImageTampering = asyncHandler(async (req, res) => {
   } catch (error) {
     logger.error(`Image tampering check failed for document ID: ${id}`, error.message);
 
-    documentService.updateImageTamperingResults(id, {
+    await documentService.updateImageTamperingResults(id, {
       safe: false,
       riskLevel: 'unknown',
       summary: 'Tampering check failed',
