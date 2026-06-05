@@ -1,45 +1,30 @@
 import React from 'react';
-import styles from './Button.module.css';
+import MuiButton from '@mui/material/Button';
+import CircularProgress from '@mui/material/CircularProgress';
 
-/**
- * Reusable Button component
- * @param {string} variant - 'primary' | 'secondary' | 'danger' | 'ghost'
- * @param {string} size    - 'sm' | 'md' | 'lg'
- * @param {boolean} loading
- * @param {boolean} disabled
- */
 const Button = ({
-  children,
-  variant = 'primary',
-  size = 'md',
-  loading = false,
-  disabled = false,
-  type = 'button',
-  onClick,
-  className = '',
-  ...rest
+  children, variant = 'primary', size = 'md',
+  loading = false, disabled = false, type = 'button',
+  onClick, className = '', ...rest
 }) => {
-  const cls = [
-    styles.btn,
-    styles[variant],
-    styles[size],
-    loading ? styles.loading : '',
-    className,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  const muiVariant = variant === 'primary' ? 'contained' : variant === 'secondary' ? 'outlined' : 'text';
+  const muiSize = size === 'sm' ? 'small' : size === 'lg' ? 'large' : 'medium';
+  const color = variant === 'danger' ? 'error' : variant === 'success' ? 'success' : 'primary';
 
   return (
-    <button
+    <MuiButton
       type={type}
-      className={cls}
+      variant={muiVariant}
+      size={muiSize}
+      color={color}
       disabled={disabled || loading}
       onClick={onClick}
+      className={className}
+      startIcon={loading ? <CircularProgress size={18} color="inherit" /> : undefined}
       {...rest}
     >
-      {loading ? <span className={styles.spinner} /> : null}
       {children}
-    </button>
+    </MuiButton>
   );
 };
 

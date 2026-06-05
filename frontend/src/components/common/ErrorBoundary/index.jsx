@@ -1,9 +1,14 @@
 import React from 'react';
+import Box from '@mui/material/Box';
+import Alert from '@mui/material/Alert';
+import Button from '@mui/material/Button';
+import Typography from '@mui/material/Typography';
+import LinearProgress from '@mui/material/LinearProgress';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null, errorInfo: null };
+    this.state = { hasError: false, error: null };
   }
 
   static getDerivedStateFromError(error) {
@@ -11,7 +16,6 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    this.setState({ errorInfo });
     if (typeof this.props.onError === 'function') {
       this.props.onError(error, errorInfo);
     }
@@ -22,41 +26,30 @@ class ErrorBoundary extends React.Component {
       if (this.props.fallback) {
         return this.props.fallback;
       }
-
       return (
-        <div style={{
-          padding: '24px',
-          margin: '16px',
-          borderRadius: '8px',
-          border: '1px solid #f5c6cb',
-          backgroundColor: '#f8d7da',
-          color: '#721c24',
-        }}>
-          <h3 style={{ margin: '0 0 8px' }}>Something went wrong</h3>
-          <p style={{ margin: '0 0 4px', fontSize: '14px' }}>
-            {this.state.error?.message || 'An unexpected error occurred'}
-          </p>
-          <button
-            onClick={() => {
-              this.setState({ hasError: false, error: null, errorInfo: null });
-              window.location.reload();
-            }}
-            style={{
-              marginTop: '8px',
-              padding: '6px 16px',
-              border: '1px solid #721c24',
-              borderRadius: '4px',
-              background: 'transparent',
-              color: '#721c24',
-              cursor: 'pointer',
-            }}
-          >
-            Try Again
-          </button>
-        </div>
+        <Box sx={{ p: 3, m: 2 }}>
+          <Alert severity="error" variant="outlined" sx={{ borderRadius: 2 }}>
+            <Typography variant="h6" gutterBottom>
+              Something went wrong
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 2 }}>
+              {this.state.error?.message || 'An unexpected error occurred'}
+            </Typography>
+            <Button
+              variant="outlined"
+              color="error"
+              size="small"
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                window.location.reload();
+              }}
+            >
+              Try Again
+            </Button>
+          </Alert>
+        </Box>
       );
     }
-
     return this.props.children;
   }
 }
