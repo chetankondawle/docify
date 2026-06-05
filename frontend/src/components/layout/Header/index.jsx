@@ -9,6 +9,7 @@ import Button from '@mui/material/Button';
 const navLinks = [
   { label: 'Home', to: '/' },
   { label: 'Documents', to: '/documents' },
+  { label: 'Demo', to: '/demo' },
 ];
 
 const Header = () => {
