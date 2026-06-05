@@ -25,18 +25,6 @@ const extractOCR = asyncHandler(async (req, res) => {
     return sendNotFound(res, 'Document not found');
   }
 
-  // Check if OCR already processed
-  if (document.ocrProcessed && document.ocrData) {
-    return sendSuccess(res, {
-      documentId: document.id,
-      documentType: document.ocrData.documentType,
-      extractedData: document.ocrData.extractedData,
-      confidence: document.ocrData.confidence,
-      cached: true,
-      processedAt: document.ocrProcessedAt,
-    }, 'OCR data retrieved from cache');
-  }
-
   try {
     logger.info(`Starting OCR extraction for document ID: ${id}`);
 
@@ -256,17 +244,6 @@ const batchExtractOCR = asyncHandler(async (req, res) => {
       
       if (!document) {
         errors.push({ id, error: 'Document not found' });
-        continue;
-      }
-
-      if (document.ocrProcessed && document.ocrData) {
-        results.push({
-          id: document.id,
-          documentType: document.ocrData.documentType,
-          extractedData: document.ocrData.extractedData,
-          confidence: document.ocrData.confidence,
-          cached: true,
-        });
         continue;
       }
 

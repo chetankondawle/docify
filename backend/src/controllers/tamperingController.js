@@ -103,14 +103,6 @@ const checkImageTampering = asyncHandler(async (req, res) => {
     return sendError(res, 'Document is not an image', 400);
   }
 
-  if (document.imageTampering) {
-    return sendSuccess(res, {
-      documentId: document.id,
-      ...document.imageTampering,
-      cached: true,
-    }, 'Image tampering check retrieved from cache');
-  }
-
   try {
     logger.info(`Running image tampering check for document ID: ${id}`);
 
