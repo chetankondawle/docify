@@ -179,16 +179,25 @@ Examine the document and determine what type of document it is (e.g., Aadhaar Ca
 STEP 2 — Verify it matches the expected type:
 The expected document type is: ${schema ? 'a document matching the schema below' : 'any document'}
 
-STEP 3 — Extract the fields:
+STEP 3 — Detect the document language:
+Identify what language the text in the document is written in (e.g., English, Hindi, Marathi, Tamil, etc.).
+
+STEP 4 — Extract and translate the fields:
 If the document type matches what is expected, extract the fields specified in this schema:
 ${schemaDescription}
+
+If the document text is NOT in English, translate ALL extracted field values to English. For numeric and date fields, keep the values as-is (only translate text/string fields). Include both the original (untranslated) values and the English translations.
 
 Return a valid JSON object with this structure:
 {
   "detectedDocumentType": "the actual document type you identified (e.g., aadhaar_card, pan_card, passport, salary_slip, invoice, receipt, unknown)",
   "typeMatch": true or false (true if the document matches the expected type),
+  "documentLanguage": "the detected language of the document (e.g., English, Hindi, Marathi, Tamil, etc.)",
   "extractedData": {
-    ...fields from the schema that were found in the document
+    ...fields from the schema — ALL values must be in English (translated if needed)
+  },
+  "originalExtractedData": {
+    ...same field names as extractedData, but with the original untranslated values
   },
   "missingFields": ["list", "of", "schema", "fields", "not", "found"],
   "confidence": "high|medium|low"
@@ -199,6 +208,9 @@ Rules:
 - Use null for fields not found in the document
 - detectedDocumentType must be lowercase with underscores
 - typeMatch must be false if the document is clearly a different type
+- documentLanguage must be the full language name (e.g., "English", "Hindi", "Marathi")
+- If the document is in English, documentLanguage should be "English" and originalExtractedData can be omitted
+- For nested structures like earnings/deductions arrays, translate the component names to English but keep numeric values unchanged
 - If you cannot determine the document type, use "unknown"`;
 
       const result = await model.generateContent([prompt, imagePart]);

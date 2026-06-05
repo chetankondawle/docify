@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import FileUpload from '@components/common/FileUpload';
 import Button from '@components/common/Button';
+import Snackbar from '@components/common/Snackbar';
 import { getAllDocuments, deleteDocument } from '@services/documentService';
 import { extractOCR, extractStructuredData, getDocumentTypes } from '@services/ocrService';
 import { checkTampering, checkImageTampering } from '@services/tamperingService';
@@ -13,10 +14,13 @@ const DocumentsPage = () => {
   const navigate = useNavigate();
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [successMessage, setSuccessMessage] = useState(null);
+  const [snackbar, setSnackbar] = useState(null);
   const mountedRef = useRef(true);
   const timersRef = useRef([]);
+
+  const showSnackbar = (message, type = 'error') => {
+    setSnackbar({ message, type });
+  };
 
   const safeTimeout = (fn, ms) => {
     const id = setTimeout(() => {
@@ -38,6 +42,7 @@ const DocumentsPage = () => {
   // OCR states
   const [ocrLoading, setOcrLoading] = useState({});
   const [ocrResults, setOcrResults] = useState({});
+  const [showOriginal, setShowOriginal] = useState({}); // toggle original vs translated
 
   // Tampering check states
   const [tamperingLoading, setTamperingLoading] = useState({});
@@ -61,12 +66,10 @@ const DocumentsPage = () => {
   const fetchDocuments = useCallback(async () => {
     try {
       setLoading(true);
-      setError(null);
       const response = await getAllDocuments();
-      // Ensure the response data includes documentType if it was stored during upload
       setDocuments(response.data || []);
     } catch (err) {
-      setError(err.message || 'Failed to fetch documents');
+      showSnackbar(err.message || 'Failed to fetch documents');
     } finally {
       setLoading(false);
     }
@@ -91,7 +94,7 @@ const DocumentsPage = () => {
         setAllAvailableDocumentTypes(response.data.documentTypes || []); 
       } catch (err) {
         console.error("Error fetching document types:", err);
-        setError("Failed to load document types. Please check the backend service.");
+        showSnackbar("Failed to load document types. Please check the backend service.");
       }
     };
     fetchTypes();
@@ -100,16 +103,12 @@ const DocumentsPage = () => {
   // --- Handlers ---
 
   const handleUploadSuccess = (document) => {
-    // Assuming the backend returns the newly created document object, including its assigned type.
-    // The document object should ideally have a 'documentType' field now.
-    setSuccessMessage(`Document "${document.originalName}" uploaded successfully!`);
-    safeTimeout(() => setSuccessMessage(null), 5000);
-    fetchDocuments(); // Refresh list to show the new document with its type
+    showSnackbar(`Document "${document.originalName}" uploaded successfully!`, 'success');
+    fetchDocuments();
   };
 
   const handleUploadError = (errorMsg) => {
-    setError(errorMsg);
-    safeTimeout(() => setError(null), 5000);
+    showSnackbar(errorMsg);
   };
 
   const handleDelete = async (id, name) => {
@@ -117,38 +116,31 @@ const DocumentsPage = () => {
 
     try {
       await deleteDocument(id);
-      setSuccessMessage('Document deleted successfully');
-      safeTimeout(() => setSuccessMessage(null), 5000);
+      showSnackbar('Document deleted successfully', 'success');
       fetchDocuments();
     } catch (err) {
-      setError(err.message || 'Failed to delete document');
-      safeTimeout(() => setError(null), 5000);
+      showSnackbar(err.message || 'Failed to delete document');
     }
   };
 
   const handleExtractOCR = async (docId, docName) => {
     setOcrLoading((prev) => ({ ...prev, [docId]: true }));
-    setError(null);
 
-    // Find the document to get its stored documentType
     const document = documents.find(doc => doc.id === docId);
-
+    
     if (!document) {
-      setError('Document not found');
+      showSnackbar('Document not found');
       setOcrLoading((prev) => ({ ...prev, [docId]: false }));
       return;
     }
 
-    // Check if document has a documentType stored
     if (!document.documentType) {
-      setError('Document type not specified. Please re-upload the document with a document type.');
-      safeTimeout(() => setError(null), 5000);
+      showSnackbar('Document type not specified. Please re-upload the document with a document type.');
       setOcrLoading((prev) => ({ ...prev, [docId]: false }));
       return;
     }
 
     try {
-      // Use structured extraction with the document's stored type
       const response = await extractStructuredData(docId, document.documentType);
 
       setOcrResults((prev) => ({
@@ -156,18 +148,19 @@ const DocumentsPage = () => {
         [docId]: {
           documentType: response.data.documentType,
           extractedData: response.data.extractedData || {},
+          originalExtractedData: response.data.originalExtractedData || null,
+          documentLanguage: response.data.documentLanguage || null,
           model: response.data.model,
           quality: response.data.quality || null,
         },
       }));
 
-      setSuccessMessage(
-        `OCR extraction completed for "${docName}" as ${document.documentType}`
+      showSnackbar(
+        `OCR extraction completed for "${docName}" as ${document.documentType}`,
+        'success'
       );
-      safeTimeout(() => setSuccessMessage(null), 5000);
     } catch (err) {
-      setError(err.message || 'OCR extraction failed');
-      safeTimeout(() => setError(null), 5000);
+      showSnackbar(err.message || 'OCR extraction failed');
     } finally {
       setOcrLoading((prev) => ({ ...prev, [docId]: false }));
     }
@@ -176,14 +169,12 @@ const DocumentsPage = () => {
 
   const handleCheckTampering = async (docId, docName, mimetype) => {
     setTamperingLoading((prev) => ({ ...prev, [docId]: true }));
-    setError(null);
 
     const isImage = typeof mimetype === 'string' && mimetype.startsWith('image/');
     const isPdf = mimetype === 'application/pdf';
 
     if (!isImage && !isPdf) {
-      setError('Security check is only supported for PDF and image files');
-      safeTimeout(() => setError(null), 5000);
+      showSnackbar('Security check is only supported for PDF and image files');
       setTamperingLoading((prev) => ({ ...prev, [docId]: false }));
       return;
     }
@@ -207,15 +198,14 @@ const DocumentsPage = () => {
         },
       }));
 
-      setSuccessMessage(
+      showSnackbar(
         `${isImage ? 'Image' : 'PDF'} security check completed for "${docName}"${
           response.data.cached ? ' (cached)' : ''
-        }`
+        }`,
+        'success'
       );
-      safeTimeout(() => setSuccessMessage(null), 5000);
     } catch (err) {
-      setError(err.message || 'Security check failed');
-      safeTimeout(() => setError(null), 5000);
+      showSnackbar(err.message || 'Security check failed');
     } finally {
       setTamperingLoading((prev) => ({ ...prev, [docId]: false }));
     }
@@ -259,10 +249,7 @@ const DocumentsPage = () => {
         [docId]: response.data,
       }));
 
-      setSuccessMessage(
-        `✓ Validation completed for "${docName}"`
-      );
-      safeTimeout(() => setSuccessMessage(null), 5000);
+      showSnackbar(`✓ Validation completed for "${docName}"`, 'success');
 
       return { success: true };
     } catch (err) {
@@ -353,6 +340,14 @@ const DocumentsPage = () => {
                   {new Date(userInfo.dob).toLocaleDateString()}
                 </span>
                 <span className={styles.metaItem}>
+                  <span className={styles.metaIcon}>🪪</span>
+                  {userInfo.pan}
+                </span>
+                <span className={styles.metaItem}>
+                  <span className={styles.metaIcon}>💰</span>
+                  ₹{Number(userInfo.salary).toLocaleString()}
+                </span>
+                <span className={styles.metaItem}>
                   <span className={styles.metaIcon}>📍</span>
                   {userInfo.address}
                 </span>
@@ -366,7 +361,7 @@ const DocumentsPage = () => {
         </div>
       )}
 
-      
+      <Snackbar message={snackbar?.message} type={snackbar?.type} onClose={() => setSnackbar(null)} />
 
       {/* --- Upload Section with Document Type Selector --- */}
       <div className={styles.uploadSection}>
@@ -518,58 +513,65 @@ const DocumentsPage = () => {
               {/* Right: Data + Security Panel */}
               <div className={styles.dataPanel}>
                 {/* OCR Results */}
-                {ocrResults[doc.id] && (
+                {ocrResults[doc.id] && (() => {
+                  const displayData = showOriginal[doc.id] && ocrResults[doc.id].originalExtractedData
+                    ? ocrResults[doc.id].originalExtractedData
+                    : ocrResults[doc.id].extractedData;
+                  return (
                   <div className={styles.dataCard}>
                     <div className={styles.dataCardHeader}>
                       <span>📄 Extracted Data</span>
                       {ocrResults[doc.id].documentType && (
                         <span className={styles.docTypeBadge}>{ocrResults[doc.id].documentType}</span>
                       )}
+                      {ocrResults[doc.id].documentLanguage && ocrResults[doc.id].documentLanguage !== 'English' && (
+                        <span className={styles.langBadge}>{ocrResults[doc.id].documentLanguage}</span>
+                      )}
                     </div>
                     <div className={styles.dataCardBody}>
-                      {Object.keys(ocrResults[doc.id].extractedData).length > 0 ? (
+                      {Object.keys(displayData).length > 0 ? (
                         ocrResults[doc.id].documentType === 'SALARY_SLIP' &&
-                        (Array.isArray(ocrResults[doc.id].extractedData.earnings) ||
-                         Array.isArray(ocrResults[doc.id].extractedData.deductions)) ? (
+                        (Array.isArray(displayData.earnings) ||
+                         Array.isArray(displayData.deductions)) ? (
                           <div className={styles.salarySlip}>
-                            {ocrResults[doc.id].extractedData.employeeName && (
+                            {displayData.employeeName && (
                               <div className={styles.salaryInfoRow}>
                                 <span className={styles.salaryInfoLabel}>Employee:</span>
-                                <span className={styles.salaryInfoValue}>{ocrResults[doc.id].extractedData.employeeName}</span>
+                                <span className={styles.salaryInfoValue}>{displayData.employeeName}</span>
                               </div>
                             )}
-                            {ocrResults[doc.id].extractedData.employeeId && (
+                            {displayData.employeeId && (
                               <div className={styles.salaryInfoRow}>
                                 <span className={styles.salaryInfoLabel}>Employee ID:</span>
-                                <span className={styles.salaryInfoValue}>{ocrResults[doc.id].extractedData.employeeId}</span>
+                                <span className={styles.salaryInfoValue}>{displayData.employeeId}</span>
                               </div>
                             )}
-                            {ocrResults[doc.id].extractedData.monthYear && (
+                            {displayData.monthYear && (
                               <div className={styles.salaryInfoRow}>
                                 <span className={styles.salaryInfoLabel}>Period:</span>
-                                <span className={styles.salaryInfoValue}>{ocrResults[doc.id].extractedData.monthYear}</span>
+                                <span className={styles.salaryInfoValue}>{displayData.monthYear}</span>
                               </div>
                             )}
-                            {Array.isArray(ocrResults[doc.id].extractedData.earnings) && (
+                            {Array.isArray(displayData.earnings) && (
                               <div className={styles.salaryTableSection}>
                                 <h4 className={styles.salaryTableTitle}>Earnings</h4>
                                 <table className={styles.salaryTable}>
                                   <thead><tr><th className={styles.salaryThLeft}>Component</th><th className={styles.salaryThRight}>Amount</th></tr></thead>
                                   <tbody>
-                                    {ocrResults[doc.id].extractedData.earnings.map((item, i) => (
+                                    {displayData.earnings.map((item, i) => (
                                       <tr key={i}><td className={styles.salaryTdLeft}>{item.component}</td><td className={styles.salaryTdRight}>{typeof item.amount === 'number' ? item.amount.toLocaleString() : item.amount}</td></tr>
                                     ))}
                                   </tbody>
                                 </table>
                               </div>
                             )}
-                            {Array.isArray(ocrResults[doc.id].extractedData.deductions) && (
+                            {Array.isArray(displayData.deductions) && (
                               <div className={styles.salaryTableSection}>
                                 <h4 className={styles.salaryTableTitle}>Deductions</h4>
                                 <table className={styles.salaryTable}>
                                   <thead><tr><th className={styles.salaryThLeft}>Component</th><th className={styles.salaryThRight}>Amount</th></tr></thead>
                                   <tbody>
-                                    {ocrResults[doc.id].extractedData.deductions.map((item, i) => (
+                                    {displayData.deductions.map((item, i) => (
                                       <tr key={i}><td className={styles.salaryTdLeft}>{item.component}</td><td className={styles.salaryTdRight}>{typeof item.amount === 'number' ? item.amount.toLocaleString() : item.amount}</td></tr>
                                     ))}
                                   </tbody>
@@ -577,20 +579,20 @@ const DocumentsPage = () => {
                               </div>
                             )}
                             <div className={styles.salaryTotals}>
-                              {ocrResults[doc.id].extractedData.totalEarnings != null && (
-                                <div className={styles.salaryTotalRow}><span className={styles.salaryTotalLabel}>Total Earnings</span><span className={styles.salaryTotalValue}>{typeof ocrResults[doc.id].extractedData.totalEarnings === 'number' ? ocrResults[doc.id].extractedData.totalEarnings.toLocaleString() : ocrResults[doc.id].extractedData.totalEarnings}</span></div>
+                              {displayData.totalEarnings != null && (
+                                <div className={styles.salaryTotalRow}><span className={styles.salaryTotalLabel}>Total Earnings</span><span className={styles.salaryTotalValue}>{typeof displayData.totalEarnings === 'number' ? displayData.totalEarnings.toLocaleString() : displayData.totalEarnings}</span></div>
                               )}
-                              {ocrResults[doc.id].extractedData.totalDeductions != null && (
-                                <div className={styles.salaryTotalRow}><span className={styles.salaryTotalLabel}>Total Deductions</span><span className={styles.salaryTotalValue}>{typeof ocrResults[doc.id].extractedData.totalDeductions === 'number' ? ocrResults[doc.id].extractedData.totalDeductions.toLocaleString() : ocrResults[doc.id].extractedData.totalDeductions}</span></div>
+                              {displayData.totalDeductions != null && (
+                                <div className={styles.salaryTotalRow}><span className={styles.salaryTotalLabel}>Total Deductions</span><span className={styles.salaryTotalValue}>{typeof displayData.totalDeductions === 'number' ? displayData.totalDeductions.toLocaleString() : displayData.totalDeductions}</span></div>
                               )}
-                              {ocrResults[doc.id].extractedData.netSalary != null && (
-                                <div className={`${styles.salaryTotalRow} ${styles.salaryNetRow}`}><span className={styles.salaryTotalLabel}>Net Salary</span><span className={styles.salaryTotalValue}>{typeof ocrResults[doc.id].extractedData.netSalary === 'number' ? ocrResults[doc.id].extractedData.netSalary.toLocaleString() : ocrResults[doc.id].extractedData.netSalary}</span></div>
+                              {displayData.netSalary != null && (
+                                <div className={`${styles.salaryTotalRow} ${styles.salaryNetRow}`}><span className={styles.salaryTotalLabel}>Net Salary</span><span className={styles.salaryTotalValue}>{typeof displayData.netSalary === 'number' ? displayData.netSalary.toLocaleString() : displayData.netSalary}</span></div>
                               )}
                             </div>
                           </div>
                         ) : (
                           <div className={styles.dataGrid}>
-                            {Object.entries(ocrResults[doc.id].extractedData).map(([key, value]) => (
+                            {Object.entries(displayData).map(([key, value]) => (
                               <div key={key} className={styles.dataItem}>
                                 <span className={styles.dataKey}>{key}:</span>
                                 <span className={styles.dataValue}>
@@ -606,6 +608,14 @@ const DocumentsPage = () => {
                     </div>
                     <div className={styles.dataCardFooter}>
                       <span className={styles.ocrModel}>Model: {ocrResults[doc.id].model}</span>
+                      {ocrResults[doc.id].originalExtractedData && (
+                        <button
+                          onClick={() => setShowOriginal(prev => ({ ...prev, [doc.id]: !prev[doc.id] }))}
+                          className={styles.translateToggle}
+                        >
+                          {showOriginal[doc.id] ? '🌐 Show English' : '🔄 Show Original'}
+                        </button>
+                      )}
                       <button
                         onClick={async () => { await handleValidateOCR(doc.id, doc.originalName); }}
                         disabled={validateLoading[doc.id]}
@@ -615,7 +625,8 @@ const DocumentsPage = () => {
                       </button>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* Validation Results */}
                 {validationResults[doc.id] && (
@@ -793,9 +804,9 @@ const DocumentsPage = () => {
                         {Object.entries(issue.details).map(([value, docIds]) => (
                           <div key={value} className={styles.detailRow}>
                             <span className={styles.detailValue}>"{value}"</span>
-                            <span className={styles.detailDocs}>
+                            {/* <span className={styles.detailDocs}>
                               found in: {Array.isArray(docIds) ? docIds.join(', ') : docIds}
-                            </span>
+                            </span> */}
                           </div>
                         ))}
                       </div>

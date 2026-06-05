@@ -341,24 +341,41 @@ const validateMultipleDocuments = (documentsData, userData) => {
   });
 
   // Check consistency across documents for critical fields
-  const criticalFieldsToCheck = [
-    { field: 'name', label: 'Name', severity: 'HIGH' },
-    { field: 'employeeName', label: 'Employee Name', severity: 'HIGH', mapsToName: true },
-    { field: 'dateOfBirth', label: 'Date of Birth', severity: 'HIGH' },
-    { field: 'dob', label: 'Date of Birth', severity: 'HIGH' },
-  ];
+  // Only check fields relevant to the document types that were uploaded
+  const docTypesPresent = Object.values(documentsData).map(d => d.documentType);
+  const hasNameDoc = docTypesPresent.some(t => ['AADHAAR_CARD', 'PAN_CARD', 'PASSPORT'].includes(t));
+  const hasSalarySlip = docTypesPresent.includes('SALARY_SLIP');
 
-  criticalFieldsToCheck.forEach(({ field: fieldName, label, severity, mapsToName }) => {
+  const criticalFieldsToCheck = [];
+
+  if (hasNameDoc && hasSalarySlip) {
+    // Both doc categories present — single name check with cross-type fallback
+    criticalFieldsToCheck.push({ field: 'name', label: 'Name', severity: 'HIGH', fallbackTo: 'employeeName', docTypes: ['AADHAAR_CARD', 'PAN_CARD', 'PASSPORT', 'SALARY_SLIP'] });
+  } else if (hasNameDoc) {
+    criticalFieldsToCheck.push({ field: 'name', label: 'Name', severity: 'HIGH', docTypes: ['AADHAAR_CARD', 'PAN_CARD', 'PASSPORT'] });
+  } else if (hasSalarySlip) {
+    criticalFieldsToCheck.push({ field: 'employeeName', label: 'Employee Name', severity: 'HIGH', docTypes: ['SALARY_SLIP'] });
+  }
+
+  if (hasNameDoc) {
+    criticalFieldsToCheck.push({ field: 'dateOfBirth', label: 'Date of Birth', severity: 'HIGH', docTypes: ['AADHAAR_CARD', 'PAN_CARD', 'PASSPORT'] });
+    criticalFieldsToCheck.push({ field: 'dob', label: 'Date of Birth', severity: 'HIGH', docTypes: ['AADHAAR_CARD', 'PAN_CARD', 'PASSPORT'] });
+  }
+
+  criticalFieldsToCheck.forEach(({ field: fieldName, label, severity, fallbackTo, docTypes }) => {
     const extractedValues = {};
     const missingDocIds = [];
 
     Object.entries(documentsData).forEach(([docId, { documentType }]) => {
+      // Only check this field on documents whose type has this field
+      if (docTypes && !docTypes.includes(documentType)) return;
+
       const result = validations[docId];
 
       let field = result.fieldResults[fieldName];
 
-      if (!field?.ocrValue && mapsToName) {
-        field = result.fieldResults['name'] || result.fieldResults['employeeName'];
+      if (!field?.ocrValue && fallbackTo) {
+        field = result.fieldResults[fallbackTo];
       }
 
       if (field?.ocrValue) {
@@ -374,7 +391,7 @@ const validateMultipleDocuments = (documentsData, userData) => {
 
     if (Object.keys(extractedValues).length > 1) {
       crossDocumentIssues.push({
-        field: fieldName,
+        field: label,
         severity,
         message: `Different ${label} values found across documents`,
         details: extractedValues,
@@ -387,7 +404,7 @@ const validateMultipleDocuments = (documentsData, userData) => {
       const details = { ...extractedValues };
       details['(not extracted)'] = missingDocIds;
       crossDocumentIssues.push({
-        field: fieldName,
+        field: label,
         severity: 'MEDIUM',
         message: `${label} is "${theValue}" in document(s) ${presentDocIds.join(', ')} but missing in document(s) ${missingDocIds.join(', ')}`,
         details,

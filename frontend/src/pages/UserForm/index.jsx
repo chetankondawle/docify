@@ -10,6 +10,8 @@ const UserFormPage = () => {
     username: '',
     mobile: '',
     dob: '',
+    pan: '',
+    salary: '',
     address: '',
   });
   const [error, setError] = useState(null);
@@ -48,6 +50,22 @@ const UserFormPage = () => {
     }
     if (!formData.dob) {
       setError('Date of birth is required');
+      return false;
+    }
+    if (!formData.pan.trim()) {
+      setError('PAN number is required');
+      return false;
+    }
+    if (!/^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/.test(formData.pan)) {
+      setError('PAN must be 5 letters + 4 digits + 1 letter (e.g., AAAPZ1234C)');
+      return false;
+    }
+    if (!formData.salary.trim()) {
+      setError('Salary is required');
+      return false;
+    }
+    if (!/^\d+(\.\d{1,2})?$/.test(formData.salary)) {
+      setError('Salary must be a valid number (e.g., 50000 or 50000.50)');
       return false;
     }
     if (!formData.address.trim()) {
@@ -143,6 +161,43 @@ const UserFormPage = () => {
               value={formData.dob}
               onChange={handleInputChange}
               className={styles.input}
+              disabled={loading}
+            />
+          </div>
+
+          <div className={styles.formGroup}>
+            <label htmlFor="pan" className={styles.label}>
+              PAN Number
+            </label>
+            <input
+              type="text"
+              id="pan"
+              name="pan"
+              value={formData.pan}
+              onChange={(e) => {
+                const val = e.target.value.toUpperCase();
+                setFormData((prev) => ({ ...prev, pan: val }));
+                setError(null);
+              }}
+              className={styles.input}
+              placeholder="e.g., AAAPZ1234C"
+              disabled={loading}
+              maxLength="10"
+            />
+          </div>
+
+          <div className={styles.formGroup}>
+            <label htmlFor="salary" className={styles.label}>
+              Monthly Salary (₹)
+            </label>
+            <input
+              type="text"
+              id="salary"
+              name="salary"
+              value={formData.salary}
+              onChange={handleInputChange}
+              className={styles.input}
+              placeholder="e.g., 50000"
               disabled={loading}
             />
           </div>
