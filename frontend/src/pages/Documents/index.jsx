@@ -31,6 +31,7 @@ import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import Tooltip from '@mui/material/Tooltip';
+import Drawer from '@mui/material/Drawer';
 import Avatar from '@mui/material/Avatar';
 import PersonIcon from '@mui/icons-material/Person';
 import EditIcon from '@mui/icons-material/Edit';
@@ -38,6 +39,9 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import ImageIcon from '@mui/icons-material/Image';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CloseIcon from '@mui/icons-material/Close';
 
 const DocumentsPage = () => {
   const navigate = useNavigate();
@@ -91,6 +95,7 @@ const DocumentsPage = () => {
   const [crossValidationLoading, setCrossValidationLoading] = useState(false);
   const [crossValidationError, setCrossValidationError] = useState(null);
   const [crossValidationSuccess, setCrossValidationSuccess] = useState(false);
+  const [crossDrawerOpen, setCrossDrawerOpen] = useState(false);
   const [allAvailableDocumentTypes, setAllAvailableDocumentTypes] = useState([]);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
@@ -306,6 +311,7 @@ const DocumentsPage = () => {
       const response = await validateDocuments(documentsArray, userInfo);
       setValidationResults(prev => ({ ...prev, __crossValidation__: response.data }));
       setCrossValidationSuccess(true);
+      setCrossDrawerOpen(true);
       safeTimeout(() => setCrossValidationSuccess(false), 5000);
     } catch (err) {
       setCrossValidationError(err.message || 'Cross-validation failed. Please try again.');
@@ -775,41 +781,195 @@ const DocumentsPage = () => {
             </Box>
           )}
 
-          {/* Cross-Validation Results */}
+          {/* Cross-Validation Drawer */}
           {validationResults.__crossValidation__ && (
-            <Paper sx={{ mt: 3, borderRadius: 2 }}>
-              <Box sx={{ p: 1.5, bgcolor: 'grey.50', borderBottom: 1, borderColor: 'divider' }}>
-                <Typography variant="h6">Cross-Document Validation Results</Typography>
-              </Box>
-              <Box sx={{ p: 2 }}>
-                {validationResults.__crossValidation__.crossDocumentIssues?.length > 0 ? (
-                  validationResults.__crossValidation__.crossDocumentIssues.map((issue, idx) => (
-                    <Box key={idx} sx={{ p: 2, mb: 1, border: 1, borderColor: issue.severity === 'HIGH' ? 'error.main' : 'warning.main', borderRadius: 1, bgcolor: issue.severity === 'HIGH' ? 'error.50' : 'warning.50' }}>
-                      <Typography variant="subtitle2" color={issue.severity === 'HIGH' ? 'error.dark' : 'warning.dark'}>
-                        {issue.field}
+            <Drawer
+              anchor="right"
+              open={crossDrawerOpen}
+              onClose={() => setCrossDrawerOpen(false)}
+              PaperProps={{ sx: { width: { xs: '100%', sm: 700 }, p: 0 } }}
+            >
+              <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <Box sx={{ p: 2, bgcolor: 'grey.50', borderBottom: 1, borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <CompareArrowsIcon color={validationResults.__crossValidation__.overallValid ? 'success' : 'warning'} />
+                  <Typography variant="h6" sx={{ flex: 1 }}>Cross-Document Validation</Typography>
+                  <Chip
+                    label={validationResults.__crossValidation__.overallValid ? 'CONSISTENT' : `${validationResults.__crossValidation__.crossDocumentIssues?.length || 0} ISSUES`}
+                    size="small"
+                    color={validationResults.__crossValidation__.overallValid ? 'success' : 'warning'}
+                    variant="filled"
+                  />
+                  <IconButton size="small" onClick={() => setCrossDrawerOpen(false)}>
+                    <CloseIcon />
+                  </IconButton>
+                </Box>
+
+                <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+                  {validationResults.__crossValidation__.crossDocumentIssues?.length > 0 ? (
+                    (() => {
+                      const issues = validationResults.__crossValidation__.crossDocumentIssues;
+                      const fields = issues.map(i => i.field);
+                      const allDocIds = [...new Set(issues.flatMap(i =>
+                        Object.values(i.details || {}).flatMap(v => Array.isArray(v) ? v : [v])
+                      ))];
+                      const docs = allDocIds.map(id => documents.find(d => d.id === Number(id))).filter(Boolean);
+
+                      const getValue = (docId, fieldName) => {
+                        const issue = issues.find(i => i.field === fieldName);
+                        if (!issue) return null;
+                        for (const [value, docIds] of Object.entries(issue.details || {})) {
+                          const ids = Array.isArray(docIds) ? docIds : [docIds];
+                          if (ids.map(Number).includes(Number(docId))) return value;
+                        }
+                        return null;
+                      };
+
+                      const normalizeDate = (dateStr) => {
+                        if (!dateStr) return null;
+                        const d = new Date(dateStr);
+                        if (!isNaN(d.getTime())) {
+                          return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                        }
+                        const parts = dateStr.split(/[/\-.]/);
+                        if (parts.length === 3) {
+                          const [a, b, c] = parts.map(Number);
+                          const year = c > 31 ? c : a;
+                          const day = c > 31 ? a : b;
+                          const month = c > 31 ? b : a;
+                          const parsed = new Date(year, month - 1, day);
+                          if (!isNaN(parsed.getTime())) {
+                            return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                          }
+                        }
+                        return dateStr;
+                      };
+
+                      const isDateField = (fieldName) => /date|dob|birth/i.test(fieldName);
+
+                      const getUserFieldValue = (fieldName) => {
+                        const map = {
+                          'Name': userInfo?.username,
+                          'Full Name': userInfo?.username,
+                          'Date of Birth': userInfo?.dob ? normalizeDate(userInfo.dob) : null,
+                          'Address': userInfo?.address,
+                          'Gender': null,
+                          'Father\'s Name': null,
+                          'Employee Name': userInfo?.username,
+                        };
+                        return map[fieldName] || null;
+                      };
+
+                      return (
+                        <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
+                          <Table size="small">
+                            <TableHead>
+                              <TableRow sx={{ bgcolor: 'grey.100' }}>
+                                <TableCell sx={{ fontWeight: 600 }}>Document</TableCell>
+                                <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
+                                {fields.map(f => (
+                                  <TableCell key={f} sx={{ fontWeight: 600 }}>{f}</TableCell>
+                                ))}
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {/* User Data Row */}
+                              {userInfo && (
+                                <TableRow sx={{ bgcolor: 'primary.50', '&:last-child td': { borderBottom: 0 } }}>
+                                  <TableCell>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                      <PersonIcon sx={{ fontSize: 16, color: 'primary.main' }} />
+                                      <Typography variant="body2" fontWeight={600}>User Data</Typography>
+                                    </Box>
+                                  </TableCell>
+                                  <TableCell><Typography variant="caption" color="text.disabled">—</Typography></TableCell>
+                                  {fields.map(f => {
+                                    const userVal = getUserFieldValue(f);
+                                    return (
+                                      <TableCell key={f} sx={{ minWidth: 140 }}>
+                                        {userVal ? (
+                                          <Typography variant="body2" fontWeight={500} color="primary.main">{userVal}</Typography>
+                                        ) : (
+                                          <Typography variant="caption" color="text.disabled" fontStyle="italic">—</Typography>
+                                        )}
+                                      </TableCell>
+                                    );
+                                  })}
+                                </TableRow>
+                              )}
+
+                              {/* Document Rows */}
+                              {docs.map((doc) => {
+                                const originalName = doc?.originalName || `Doc #${doc.id}`;
+                                const docType = doc ? formatDocType(doc.documentType) : '—';
+                                const hasMismatch = fields.some(f => {
+                                  const docVal = getValue(doc.id, f);
+                                  const userVal = getUserFieldValue(f);
+                                  if (!userVal || !docVal) return false;
+                                  const docNormalized = isDateField(f) ? normalizeDate(docVal) : docVal;
+                                  return docNormalized && docNormalized.toLowerCase() !== userVal.toLowerCase();
+                                });
+                                return (
+                                  <TableRow key={doc.id} sx={{ '&:last-child td': { borderBottom: 0 } }}>
+                                    <TableCell>
+                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                        {doc?.mimetype === 'application/pdf' ? <PictureAsPdfIcon sx={{ fontSize: 16, color: 'error.light' }} /> : <ImageIcon sx={{ fontSize: 16, color: 'primary.light' }} />}
+                                        <Typography variant="body2" noWrap sx={{ maxWidth: 120 }}>{originalName}</Typography>
+                                      </Box>
+                                    </TableCell>
+                                    <TableCell>
+                                      <Chip label={docType} size="small" variant="outlined" color="primary" sx={{ height: 22 }} />
+                                    </TableCell>
+                                    {fields.map((f, fi) => {
+                                      const val = getValue(doc.id, f);
+                                      const displayVal = isDateField(f) && val ? normalizeDate(val) : val;
+                                      const userVal = getUserFieldValue(f);
+                                      const isMismatch = userVal && displayVal && displayVal.toLowerCase() !== userVal.toLowerCase();
+                                      const isLast = fi === fields.length - 1;
+                                      return (
+                                        <TableCell key={f} sx={{ minWidth: 140 }}>
+                                          {displayVal === null ? (
+                                            <Typography variant="caption" color="text.disabled" fontStyle="italic">—</Typography>
+                                          ) : displayVal === '(not extracted)' ? (
+                                            <Typography variant="caption" color="text.disabled" fontStyle="italic">Not extracted</Typography>
+                                          ) : (
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                              <Typography variant="body2" color="text.primary">
+                                                {displayVal}
+                                              </Typography>
+                                              {isLast && isMismatch && <Typography variant="caption" sx={{ color: 'warning.main', fontWeight: 600, pl: 0.5 }}>MISMATCH</Typography>}
+                                            </Box>
+                                          )}
+                                        </TableCell>
+                                      );
+                                    })}
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </TableContainer>
+                      );
+                    })()
+                  ) : (
+                    <Box sx={{ textAlign: 'center', py: 6 }}>
+                      <CheckCircleIcon color="success" sx={{ fontSize: 48, mb: 2 }} />
+                      <Typography variant="h6" color="success.main" gutterBottom>All Documents Consistent</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        No inconsistencies found across {Object.keys(validationResults.__crossValidation__.validations || {}).length} documents
                       </Typography>
-                      <Typography variant="body2">{issue.message}</Typography>
-                      {issue.details && (
-                        <Box sx={{ mt: 1 }}>
-                          {Object.entries(issue.details).map(([value, docIds]) => (
-                            <Typography key={value} variant="caption" display="block">
-                              &quot;{value}&quot; found in: {Array.isArray(docIds) ? docIds.join(', ') : docIds}
-                            </Typography>
-                          ))}
-                        </Box>
-                      )}
                     </Box>
-                  ))
-                ) : (
-                  <Box sx={{ textAlign: 'center', py: 2 }}>
-                    <Typography variant="h6" color="success.main">✓ All Documents Consistent</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      No inconsistencies found across {Object.keys(validationResults.__crossValidation__.validations || {}).length} documents
-                    </Typography>
-                  </Box>
-                )}
+                  )}
+                </Box>
+
+                <Divider />
+                <Box sx={{ p: 1.5, bgcolor: 'grey.50', display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+                    Validated {Object.keys(validationResults.__crossValidation__.validations || {}).length} document(s) — {validationResults.__crossValidation__.crossDocumentIssues?.length || 0} issue(s) found
+                  </Typography>
+                  <Button size="small" onClick={() => setCrossDrawerOpen(false)}>Close</Button>
+                </Box>
               </Box>
-            </Paper>
+            </Drawer>
           )}
         </Box>
       )}
