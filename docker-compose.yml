@@ -10,10 +10,16 @@ services:
       - yugabyte_data:/home/yugabyte/var
     command: >
       bash -c "
-        yugabyted start --daemon=false --advertise_address=0.0.0.0 --insecure
+        CONTAINER_IP=$(hostname -i) && \
+        echo \"Starting YugabyteDB on $$CONTAINER_IP...\" && \
+        yugabyted start --daemon=false --advertise_address=$$CONTAINER_IP --insecure
       "
     healthcheck:
-      test: ["CMD-SHELL", "ysqlsh -h 127.0.0.1 -U yugabyte -d yugabyte -c 'SELECT 1' 2>/dev/null"]
+      test:
+        [
+          "CMD-SHELL",
+          "ysqlsh -h $(hostname -i) -U yugabyte -d yugabyte -c 'SELECT 1' 2>/dev/null",
+        ]
       interval: 10s
       timeout: 5s
       retries: 15
