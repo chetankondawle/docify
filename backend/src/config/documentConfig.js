@@ -10,9 +10,9 @@ const documentTypeConfig = {
       aadhaarNumber: {
         required: true,
         rules: [
-          { type: 'length', value: 12, message: 'Aadhaar number must be exactly 12 digits' },
-          { type: 'numeric', message: 'Aadhaar number must only contain digits (0-9)' },
-          { type: 'notStartWith', values: ['0', '1'], message: 'Aadhaar number cannot start with 0 or 1' },
+          { type: 'length', value: 12, stripNonDigits: true, message: 'Aadhaar number must be exactly 12 digits' },
+          { type: 'numeric', stripNonDigits: true, message: 'Aadhaar number must only contain digits (0-9)' },
+          { type: 'notStartWith', values: ['0', '1'], stripNonDigits: true, message: 'Aadhaar number cannot start with 0 or 1' },
         ],
       },
     },

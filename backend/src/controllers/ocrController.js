@@ -181,15 +181,15 @@ const extractStructured = asyncHandler(async (req, res) => {
     documentService.updateDocumentOCR(id, {
       data: {
         documentType,
-        extractedData: result.data,
-        confidence: 'high',
+        extractedData: extractedFields,
+        confidence: result.data?.confidence || 'high',
       },
       model: result.model,
     });
 
     // Run format validation on extracted data
     const formatValidation = validationService.validateDocumentFormat(
-      result.data,
+      extractedFields,
       documentType
     );
     documentService.updateDocumentFormatValidation(id, formatValidation);
@@ -201,8 +201,6 @@ const extractStructured = asyncHandler(async (req, res) => {
     sendSuccess(res, {
       documentId: document.id,
       documentType,
-      extractedData: result.data,
-      documentType: documentType,
       detectedDocumentType: detectedType,
       documentLanguage: result.data.documentLanguage || null,
       originalExtractedData: result.data.originalExtractedData || null,

@@ -8,10 +8,47 @@ import { extractOCR, extractStructuredData, getDocumentTypes } from '@services/o
 import { checkTampering, checkImageTampering } from '@services/tamperingService';
 import { validateDocument, validateDocuments } from '@services/validateService';
 import { getUserInfo, clearUserInfo } from '@services/userFormService';
-import styles from './Documents.module.css';
+
+import Container from '@mui/material/Container';
+import Box from '@mui/material/Box';
+import Paper from '@mui/material/Paper';
+import Typography from '@mui/material/Typography';
+import Tabs from '@mui/material/Tabs';
+import Tab from '@mui/material/Tab';
+import Chip from '@mui/material/Chip';
+import Alert from '@mui/material/Alert';
+import Divider from '@mui/material/Divider';
+import IconButton from '@mui/material/IconButton';
+import LinearProgress from '@mui/material/LinearProgress';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import Tooltip from '@mui/material/Tooltip';
+import Avatar from '@mui/material/Avatar';
+import PersonIcon from '@mui/icons-material/Person';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
+import ImageIcon from '@mui/icons-material/Image';
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
 const DocumentsPage = () => {
   const navigate = useNavigate();
+
+  const formatDocType = (type) => {
+    if (!type) return '';
+    return type
+      .split('_')
+      .map(word => word === 'PAN' ? word : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [snackbar, setSnackbar] = useState(null);
@@ -38,8 +75,7 @@ const DocumentsPage = () => {
       timersRef.current = [];
     };
   }, []);
-  
-  // OCR states
+
   const [ocrLoading, setOcrLoading] = useState({});
   const [ocrResults, setOcrResults] = useState({});
   const [showOriginal, setShowOriginal] = useState({}); // toggle original vs translated
@@ -55,14 +91,10 @@ const DocumentsPage = () => {
   const [crossValidationLoading, setCrossValidationLoading] = useState(false);
   const [crossValidationError, setCrossValidationError] = useState(null);
   const [crossValidationSuccess, setCrossValidationSuccess] = useState(false);
-
-  // State for document types fetched from backend
   const [allAvailableDocumentTypes, setAllAvailableDocumentTypes] = useState([]);
-  // State for the document type selected specifically for upload
   const [selectedTypeForUpload, setSelectedTypeForUpload] = useState('');
   const [activeTab, setActiveTab] = useState(0);
 
-  // Fetch all documents
   const fetchDocuments = useCallback(async () => {
     try {
       setLoading(true);
@@ -76,7 +108,6 @@ const DocumentsPage = () => {
   }, []);
 
   useEffect(() => {
-    // Check if user info exists, if not redirect to form
     const info = getUserInfo();
     if (!info) {
       navigate('/user-form');
@@ -86,12 +117,20 @@ const DocumentsPage = () => {
     fetchDocuments();
   }, [fetchDocuments]);
 
-  // Fetch available document types when component mounts
+  // Make latest tab active and clean up stale results when document list changes
+  useEffect(() => {
+    setActiveTab(documents.length > 0 ? documents.length - 1 : 0);
+    const currentIds = new Set(documents.map((d) => d.id));
+    setOcrResults((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => currentIds.has(Number(id)))));
+    setTamperingResults((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => currentIds.has(Number(id)))));
+    setValidationResults((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => currentIds.has(Number(id)))));
+  }, [documents.length]);
+
   useEffect(() => {
     const fetchTypes = async () => {
       try {
         const response = await getDocumentTypes();
-        setAllAvailableDocumentTypes(response.data.documentTypes || []); 
+        setAllAvailableDocumentTypes(response.data.documentTypes || []);
       } catch (err) {
         console.error("Error fetching document types:", err);
         showSnackbar("Failed to load document types. Please check the backend service.");
@@ -100,10 +139,11 @@ const DocumentsPage = () => {
     fetchTypes();
   }, []);
 
-  // --- Handlers ---
-
   const handleUploadSuccess = (document) => {
     showSnackbar(`Document "${document.originalName}" uploaded successfully!`, 'success');
+    fetchDocuments();
+    setSuccessMessage(`Document "${document.originalName}" uploaded successfully!`);
+    safeTimeout(() => setSuccessMessage(null), 5000);
     fetchDocuments();
   };
 
@@ -113,7 +153,6 @@ const DocumentsPage = () => {
 
   const handleDelete = async (id, name) => {
     if (!window.confirm(`Are you sure you want to delete "${name}"?`)) return;
-
     try {
       await deleteDocument(id);
       showSnackbar('Document deleted successfully', 'success');
@@ -125,7 +164,7 @@ const DocumentsPage = () => {
 
   const handleExtractOCR = async (docId, docName) => {
     setOcrLoading((prev) => ({ ...prev, [docId]: true }));
-
+    setError(null);
     const document = documents.find(doc => doc.id === docId);
     
     if (!document) {
@@ -139,15 +178,14 @@ const DocumentsPage = () => {
       setOcrLoading((prev) => ({ ...prev, [docId]: false }));
       return;
     }
-
     try {
       const response = await extractStructuredData(docId, document.documentType);
-
       setOcrResults((prev) => ({
         ...prev,
         [docId]: {
           documentType: response.data.documentType,
           extractedData: response.data.extractedData || {},
+          formatValidation: response.data.formatValidation || null,
           originalExtractedData: response.data.originalExtractedData || null,
           documentLanguage: response.data.documentLanguage || null,
           model: response.data.model,
@@ -159,6 +197,8 @@ const DocumentsPage = () => {
         `OCR extraction completed for "${docName}" as ${document.documentType}`,
         'success'
       );
+      setSuccessMessage(`OCR extraction completed for "${docName}" as ${document.documentType}`);
+      safeTimeout(() => setSuccessMessage(null), 5000);
     } catch (err) {
       showSnackbar(err.message || 'OCR extraction failed');
     } finally {
@@ -166,24 +206,18 @@ const DocumentsPage = () => {
     }
   };
 
-
   const handleCheckTampering = async (docId, docName, mimetype) => {
     setTamperingLoading((prev) => ({ ...prev, [docId]: true }));
-
+    setError(null);
     const isImage = typeof mimetype === 'string' && mimetype.startsWith('image/');
     const isPdf = mimetype === 'application/pdf';
-
     if (!isImage && !isPdf) {
       showSnackbar('Security check is only supported for PDF and image files');
       setTamperingLoading((prev) => ({ ...prev, [docId]: false }));
       return;
     }
-
     try {
-      const response = isImage
-        ? await checkImageTampering(docId)
-        : await checkTampering(docId);
-
+      const response = isImage ? await checkImageTampering(docId) : await checkTampering(docId);
       setTamperingResults((prev) => ({
         ...prev,
         [docId]: {
@@ -204,6 +238,8 @@ const DocumentsPage = () => {
         }`,
         'success'
       );
+      setSuccessMessage(`${isImage ? 'Image' : 'PDF'} security check completed for "${docName}"${response.data.cached ? ' (cached)' : ''}`);
+      safeTimeout(() => setSuccessMessage(null), 5000);
     } catch (err) {
       showSnackbar(err.message || 'Security check failed');
     } finally {
@@ -211,46 +247,28 @@ const DocumentsPage = () => {
     }
   };
 
-  // Handler for when a document type is selected for upload
   const handleDocumentTypeForUploadChange = (type) => {
     setSelectedTypeForUpload(type);
   };
 
   const handleValidateOCR = async (docId, docName) => {
     const doc = documents.find(d => d.id === docId);
-
-    // Return validation errors to be displayed inline, not at top
     if (!ocrResults[docId]) {
       return { error: 'Please extract OCR data first before validating' };
     }
-
     if (!userInfo) {
       return { error: 'User information not available. Please fill the user form first.' };
     }
-
     if (!doc || !doc.documentType) {
       return { error: 'Document type not found. Please re-upload with a document type selected.' };
     }
-
     setValidateLoading((prev) => ({ ...prev, [docId]: true }));
-    setSelectedDocForValidation(docId); // Set this document as selected
-
+    setSelectedDocForValidation(docId);
     try {
-      // Call backend validation with document type
-      const response = await validateDocument(
-        docId,
-        doc.documentType,
-        ocrResults[docId].extractedData,
-        userInfo
-      );
-
-      setValidationResults((prev) => ({
-        ...prev,
-        [docId]: response.data,
-      }));
-
-      showSnackbar(`✓ Validation completed for "${docName}"`, 'success');
-
+      const response = await validateDocument(docId, doc.documentType, ocrResults[docId].extractedData, userInfo);
+      setValidationResults((prev) => ({ ...prev, [docId]: response.data }));
+      setSuccessMessage(`✓ Validation completed for "${docName}"`);
+      safeTimeout(() => setSuccessMessage(null), 5000);
       return { success: true };
     } catch (err) {
       return { error: err.message || 'Validation failed. Please try again.' };
@@ -267,39 +285,25 @@ const DocumentsPage = () => {
   const handleCrossValidateAll = async () => {
     setCrossValidationError(null);
     setCrossValidationSuccess(false);
-
     if (!userInfo) {
       setCrossValidationError('User information not available. Please fill the user form first.');
       return;
     }
-
     const documentsWithOCR = documents.filter(doc => ocrResults[doc.id] && doc.documentType);
-
     if (documentsWithOCR.length < 2) {
       setCrossValidationError('Please extract OCR data from at least 2 documents before cross-validation.');
       return;
     }
-
     setCrossValidationLoading(true);
-
     try {
-      // Prepare data for cross-validation - backend expects array format
       const documentsArray = documentsWithOCR.map(doc => ({
         documentId: doc.id,
         documentType: doc.documentType,
         extractedData: ocrResults[doc.id].extractedData,
       }));
-
       const response = await validateDocuments(documentsArray, userInfo);
-
-      // Store cross-validation results
-      setValidationResults(prev => ({
-        ...prev,
-        __crossValidation__: response.data,
-      }));
-
+      setValidationResults(prev => ({ ...prev, __crossValidation__: response.data }));
       setCrossValidationSuccess(true);
-      // Auto-hide success message after 5 seconds
       safeTimeout(() => setCrossValidationSuccess(false), 5000);
     } catch (err) {
       setCrossValidationError(err.message || 'Cross-validation failed. Please try again.');
@@ -308,57 +312,40 @@ const DocumentsPage = () => {
     }
   };
 
-  return (
-    <div className={styles.page}>
-      <div className={styles.pageHeaderSection}>
-        <div className={styles.pageHeaderContent}>
-          <div className={styles.pageHeaderIcon}>📋</div>
-          <div>
-            <h1 className={styles.pageTitle}>Document Validation Center</h1>
-            <p className={styles.pageSubtitle}>
-              Upload, extract, and validate your documents seamlessly
-            </p>
-          </div>
-        </div>
-      </div>
+  const getBaseUrl = () =>
+    import.meta.env.VITE_API_BASE_URL?.replace('/api/v1', '') || 'http://localhost:5000';
 
+  const doc = documents.length > 0 ? documents[activeTab] : null;
+
+  return (
+    <Box sx={{ pb: 4 }}>
+      {/* Page Header */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+        <ImageIcon sx={{ fontSize: 40, color: 'primary.main' }} />
+        <Box>
+          <Typography variant="h4">Document Validation Center</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Upload, extract, and validate your documents seamlessly
+          </Typography>
+        </Box>
+      </Box>
+
+      {/* User Banner */}
       {userInfo && (
-        <div className={styles.userBanner}>
-          <div className={styles.bannerLeft}>
-            <div className={styles.userAvatar}>
-              <span className={styles.avatarIcon}>👤</span>
-            </div>
-            <div className={styles.userDetails}>
-              <div className={styles.userName}>{userInfo.username}</div>
-              <div className={styles.userMeta}>
-                <span className={styles.metaItem}>
-                  <span className={styles.metaIcon}>📱</span>
-                  {userInfo.mobile}
-                </span>
-                <span className={styles.metaItem}>
-                  <span className={styles.metaIcon}>📅</span>
-                  {new Date(userInfo.dob).toLocaleDateString()}
-                </span>
-                <span className={styles.metaItem}>
-                  <span className={styles.metaIcon}>🪪</span>
-                  {userInfo.pan}
-                </span>
-                <span className={styles.metaItem}>
-                  <span className={styles.metaIcon}>💰</span>
-                  ₹{Number(userInfo.salary).toLocaleString()}
-                </span>
-                <span className={styles.metaItem}>
-                  <span className={styles.metaIcon}>📍</span>
-                  {userInfo.address}
-                </span>
-              </div>
-            </div>
-          </div>
-          <button onClick={handleEditUserInfo} className={styles.editUserBtn}>
-            <span className={styles.editIcon}>✏️</span>
+        <Paper sx={{ p: 2, mb: 3, display: 'flex', alignItems: 'center', gap: 2, borderRadius: 2 }}>
+          <Avatar sx={{ bgcolor: 'primary.light' }}>
+            <PersonIcon />
+          </Avatar>
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="subtitle1" fontWeight={600}>{userInfo.username}</Typography>
+            <Typography variant="body2" color="text.secondary">
+              {userInfo.mobile} &middot; {new Date(userInfo.dob).toLocaleDateString()} &middot; {userInfo.address}
+            </Typography>
+          </Box>
+          <Button variant="outlined" size="small" onClick={handleEditUserInfo} startIcon={<EditIcon />}>
             Edit Info
-          </button>
-        </div>
+          </Button>
+        </Paper>
       )}
 
       <Snackbar message={snackbar?.message} type={snackbar?.type} onClose={() => setSnackbar(null)} />
@@ -394,441 +381,466 @@ const DocumentsPage = () => {
         </div>
 
         {/* File Upload Component */}
+      {/* Alerts */}
+      {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
+      {successMessage && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccessMessage(null)}>{successMessage}</Alert>}
+
+      {/* Upload Section */}
+      <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
+        <Box sx={{ mb: 2 }}>
+          <FormControl fullWidth size="small">
+            <InputLabel id="upload-doc-type-label">Select Type for Upload</InputLabel>
+            <Select
+              labelId="upload-doc-type-label"
+              value={selectedTypeForUpload}
+              label="Select Type for Upload"
+              onChange={(e) => handleDocumentTypeForUploadChange(e.target.value)}
+              disabled={loading || allAvailableDocumentTypes.length === 0}
+            >
+              {allAvailableDocumentTypes.length === 0 ? (
+                <MenuItem value="">Loading types...</MenuItem>
+              ) : (
+                [
+                  <MenuItem key="" value="">-- Select Type --</MenuItem>,
+                  ...allAvailableDocumentTypes.map((type) => (
+                    <MenuItem key={type} value={type}>{formatDocType(type)}</MenuItem>
+                  ))
+                ]
+              )}
+            </Select>
+          </FormControl>
+        </Box>
         <FileUpload
           onUploadSuccess={handleUploadSuccess}
           onUploadError={handleUploadError}
-          selectedDocumentType={selectedTypeForUpload} // Pass the selected document type
+          selectedDocumentType={selectedTypeForUpload}
         />
-      </div>
+      </Paper>
 
-      {/* --- Uploaded Documents Section --- */}
-      <div className={styles.documentsMainSection}>
-        {/* Tab Bar */}
-        {documents.length > 0 && (
-          <div className={styles.tabBar}>
-            {documents.map((doc, idx) => (
-              <button
-                key={doc.id}
-                onClick={() => setActiveTab(idx)}
-                className={`${styles.tab} ${activeTab === idx ? styles.tabActive : ''}`}
+      {/* Documents Section */}
+      {loading ? (
+        <LinearProgress />
+      ) : documents.length === 0 ? (
+        <Paper sx={{ p: 6, textAlign: 'center', borderRadius: 2 }}>
+          <ImageIcon sx={{ fontSize: 64, color: 'grey.300', mb: 2 }} />
+          <Typography variant="h5" gutterBottom>No Documents Yet</Typography>
+          <Typography variant="body2" color="text.secondary">Upload your first document to get started</Typography>
+        </Paper>
+      ) : (
+        <Box>
+          {/* Tab Bar */}
+          <Paper sx={{ mb: 2, borderRadius: 2 }} variant="outlined">
+            <Box sx={{ display: 'flex', alignItems: 'center', overflow: 'auto' }}>
+              <Tabs
+                value={activeTab}
+                onChange={(e, v) => setActiveTab(v)}
+                variant="scrollable"
+                scrollButtons="auto"
+                sx={{ flex: 1, minHeight: 48 }}
               >
-                <span className={styles.tabIcon}>
-                  {doc.mimetype === 'application/pdf' ? '📄' : '🖼️'}
-                </span>
-                <span className={styles.tabLabel}>{doc.originalName}</span>
-                {doc.documentType && (
-                  <span className={styles.tabDocType}>{doc.documentType}</span>
-                )}
-                {tamperingResults[doc.id] && (
-                  <span className={`${styles.tabStatus} ${tamperingResults[doc.id].safe ? styles.tabStatusSafe : styles.tabStatusUnsafe}`}>
-                    {tamperingResults[doc.id].safe ? '✓' : '⚠'}
-                  </span>
-                )}
-              </button>
-            ))}
-            {documents.length > 1 && (
-              <button
-                onClick={handleCrossValidateAll}
-                disabled={Object.keys(ocrResults).length < 2 || crossValidationLoading}
-                className={`${styles.tab} ${styles.tabCrossValidate}`}
-                title="Cross-validate all documents"
-              >
-                {crossValidationLoading ? (
-                  <><span className={styles.crossSpinner}>⏳</span> Validating...</>
-                ) : (
-                  <><span className={styles.crossIcon}>🔄</span> Cross-Validate</>
-                )}
-              </button>
-            )}
-          </div>
-        )}
-        {crossValidationError && (
-          <div className={styles.crossErrorBar}>{crossValidationError}</div>
-        )}
+                {documents.map((d) => (
+                  <Tab
+                    key={d.id}
+                    icon={d.mimetype === 'application/pdf' ? <PictureAsPdfIcon /> : <ImageIcon />}
+                    iconPosition="start"
+                    label={
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, maxWidth: 180 }}>
+                        <Typography variant="body2" noWrap sx={{ maxWidth: 100 }}>
+                          {d.originalName}
+                        </Typography>
+                        {d.documentType && (
+                          <Chip label={formatDocType(d.documentType)} size="small" variant="outlined" sx={{ ml: 0.5, height: 20, fontSize: '0.7rem' }} />
+                        )}
+                        {tamperingResults[d.id] && (
+                          <Chip
+                            label={tamperingResults[d.id].safe ? '✓' : '⚠'}
+                            size="small"
+                            color={tamperingResults[d.id].safe ? 'success' : 'warning'}
+                            sx={{ height: 20, minWidth: 28 }}
+                          />
+                        )}
+                      </Box>
+                    }
+                    sx={{ minHeight: 48, textTransform: 'none', maxWidth: 220, minWidth: 100, marginRight: '8px' }}
+                  />
+                ))}
+              </Tabs>
+              {documents.length > 1 && (
+                <Box sx={{ px: 1 }}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={handleCrossValidateAll}
+                    disabled={Object.keys(ocrResults).length < 2 || crossValidationLoading}
+                    loading={crossValidationLoading}
+                  >
+                    Cross-Validate
+                  </Button>
+                </Box>
+              )}
+            </Box>
+          </Paper>
 
-        {/* Active Document Panel */}
-        {documents.length > 0 && documents[activeTab] && (() => {
-          const doc = documents[activeTab];
-          return (
-            <div className={styles.splitPanel}>
-              {/* Left: Document Preview */}
-              <div className={styles.previewPanel}>
-                <div className={styles.previewHeader}>
-                  <strong>{doc.originalName}</strong>
-                </div>
-                <div className={styles.previewContent}>
-                  {doc.mimetype && doc.mimetype.startsWith('image/') ? (
-                    <img
-                      src={`${import.meta.env.VITE_API_BASE_URL?.replace('/api/v1', '') || 'http://localhost:5000'}/uploads/${doc.filename}`}
-                      alt={doc.originalName}
-                      className={styles.previewImage}
-                    />
-                  ) : (
-                    <div className={styles.previewPlaceholder}>
-                      <span className={styles.previewPdfIcon}>📄</span>
-                      <p>{doc.originalName}</p>
-                    </div>
-                  )}
-                </div>
-                <div className={styles.previewMeta}>
-                  <span><strong>Size:</strong> {doc.sizeFormatted}</span>
-                  <span><strong>Type:</strong> {doc.mimetype}</span>
-                  {doc.documentType && <span className={styles.previewDocType}>{doc.documentType}</span>}
-                </div>
-                <div className={styles.previewActions}>
-                  <a
-                    href={`${import.meta.env.VITE_API_BASE_URL?.replace('/api/v1', '') || 'http://localhost:5000'}/uploads/${doc.filename}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={styles.viewLink}
-                  >
-                    View Document →
-                  </a>
-                  <button
-                    onClick={() => handleExtractOCR(doc.id, doc.originalName)}
-                    disabled={ocrLoading[doc.id]}
-                    className={styles.ocrBtn}
-                  >
-                    {ocrLoading[doc.id] ? '🔄 Extracting...' : '🔍 Extract OCR'}
-                  </button>
-                  {(doc.mimetype === 'application/pdf' || (doc.mimetype && doc.mimetype.startsWith('image/'))) && (
-                    <button
-                      onClick={() => handleCheckTampering(doc.id, doc.originalName, doc.mimetype)}
-                      disabled={tamperingLoading[doc.id]}
-                      className={styles.tamperingBtn}
-                    >
-                      {tamperingLoading[doc.id] ? '🔄 Checking...' : '🔐 Check Security'}
-                    </button>
-                  )}
-                  <button
-                    onClick={() => handleDelete(doc.id, doc.originalName)}
-                    className={styles.deleteBtn}
-                    title="Delete"
-                  >
-                    🗑️ Delete
-                  </button>
-                </div>
-              </div>
+          {crossValidationError && (
+            <Alert severity="warning" sx={{ mb: 2 }}>{crossValidationError}</Alert>
+          )}
+
+          {/* Active Document Panel */}
+          {doc && (
+            <Box sx={{ display: 'flex', gap: 2, flexDirection: { xs: 'column', md: 'row' } }}>
+              {/* Left: Preview */}
+              <Box sx={{ flex: { md: '0 0 45%' }, width: '100%' }}>
+                <Paper sx={{ borderRadius: 2, overflow: 'hidden' }}>
+                  <Box sx={{ p: 1.5, bgcolor: 'grey.50', borderBottom: 1, borderColor: 'divider' }}>
+                    <Typography variant="subtitle2" fontWeight={600}>{doc.originalName}</Typography>
+                  </Box>
+                  <Box sx={{ p: 2, textAlign: 'center', minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {doc.mimetype && doc.mimetype.startsWith('image/') ? (
+                      <Box
+                        component="img"
+                        src={`${getBaseUrl()}/uploads/${doc.filename}`}
+                        alt={doc.originalName}
+                        sx={{ maxWidth: '100%', maxHeight: 350, objectFit: 'contain', borderRadius: 1 }}
+                      />
+                    ) : (
+                      <Box sx={{ textAlign: 'center' }}>
+                        <PictureAsPdfIcon sx={{ fontSize: 64, color: 'error.light' }} />
+                        <Typography variant="body2">{doc.originalName}</Typography>
+                      </Box>
+                    )}
+                  </Box>
+                  <Divider />
+                  <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
+                    <Chip label={`Size: ${doc.sizeFormatted}`} size="small" variant="outlined" />
+                    <Chip label={doc.mimetype} size="small" variant="outlined" />
+                    {doc.documentType && <Chip label={formatDocType(doc.documentType)} size="small" color="primary" />}
+                  </Box>
+                  <Divider />
+                  <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                    <Button size="small" variant="outlined" component="a"
+                      href={`${getBaseUrl()}/uploads/${doc.filename}`} target="_blank"
+                      endIcon={<OpenInNewIcon />}>
+                      View
+                    </Button>
+                    <Button size="small" variant="contained"
+                      onClick={() => handleExtractOCR(doc.id, doc.originalName)}
+                      disabled={ocrLoading[doc.id]}>
+                      {ocrLoading[doc.id] ? 'Extracting...' : 'Extract OCR'}
+                    </Button>
+                    {(doc.mimetype === 'application/pdf' || (doc.mimetype && doc.mimetype.startsWith('image/'))) && (
+                      <Button size="small" variant="outlined" color="warning"
+                        onClick={() => handleCheckTampering(doc.id, doc.originalName, doc.mimetype)}
+                        disabled={tamperingLoading[doc.id]}>
+                        {tamperingLoading[doc.id] ? 'Checking...' : 'Check Security'}
+                      </Button>
+                    )}
+                    <Tooltip title="Delete">
+                      <IconButton size="small" color="error"
+                        onClick={() => handleDelete(doc.id, doc.originalName)}>
+                        <DeleteIcon />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                </Paper>
+              </Box>
 
               {/* Right: Data + Security Panel */}
-              <div className={styles.dataPanel}>
+              <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
                 {/* OCR Results */}
                 {ocrResults[doc.id] && (() => {
                   const displayData = showOriginal[doc.id] && ocrResults[doc.id].originalExtractedData
                     ? ocrResults[doc.id].originalExtractedData
                     : ocrResults[doc.id].extractedData;
                   return (
-                  <div className={styles.dataCard}>
-                    <div className={styles.dataCardHeader}>
-                      <span>📄 Extracted Data</span>
+                  <Paper sx={{ borderRadius: 2 }}>
+                    <Box sx={{ p: 1.5, bgcolor: 'grey.50', borderBottom: 1, borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="subtitle2">Extracted Data</Typography>
                       {ocrResults[doc.id].documentType && (
-                        <span className={styles.docTypeBadge}>{ocrResults[doc.id].documentType}</span>
+                        <Chip label={formatDocType(ocrResults[doc.id].documentType)} size="small" color="primary" />
                       )}
                       {ocrResults[doc.id].documentLanguage && ocrResults[doc.id].documentLanguage !== 'English' && (
                         <span className={styles.langBadge}>{ocrResults[doc.id].documentLanguage}</span>
                       )}
-                    </div>
-                    <div className={styles.dataCardBody}>
+                    </Box>
+                    <Box sx={{ p: 2 }}>
                       {Object.keys(displayData).length > 0 ? (
                         ocrResults[doc.id].documentType === 'SALARY_SLIP' &&
-                        (Array.isArray(displayData.earnings) ||
-                         Array.isArray(displayData.deductions)) ? (
-                          <div className={styles.salarySlip}>
-                            {displayData.employeeName && (
-                              <div className={styles.salaryInfoRow}>
-                                <span className={styles.salaryInfoLabel}>Employee:</span>
-                                <span className={styles.salaryInfoValue}>{displayData.employeeName}</span>
-                              </div>
+                        (Array.isArray(ocrResults[doc.id].extractedData.earnings) ||
+                         Array.isArray(ocrResults[doc.id].extractedData.deductions)) ? (
+                          <Box>
+                            {ocrResults[doc.id].extractedData.employeeName && (
+                              <Typography variant="body2"><strong>Employee:</strong> {ocrResults[doc.id].extractedData.employeeName}</Typography>
                             )}
-                            {displayData.employeeId && (
-                              <div className={styles.salaryInfoRow}>
-                                <span className={styles.salaryInfoLabel}>Employee ID:</span>
-                                <span className={styles.salaryInfoValue}>{displayData.employeeId}</span>
-                              </div>
+                            {ocrResults[doc.id].extractedData.employeeId && (
+                              <Typography variant="body2"><strong>Employee ID:</strong> {ocrResults[doc.id].extractedData.employeeId}</Typography>
                             )}
                             {displayData.monthYear && (
-                              <div className={styles.salaryInfoRow}>
-                                <span className={styles.salaryInfoLabel}>Period:</span>
-                                <span className={styles.salaryInfoValue}>{displayData.monthYear}</span>
-                              </div>
+                              <Typography variant="body2"><strong>Period:</strong> {displayData.monthYear}</Typography>
                             )}
                             {Array.isArray(displayData.earnings) && (
-                              <div className={styles.salaryTableSection}>
-                                <h4 className={styles.salaryTableTitle}>Earnings</h4>
-                                <table className={styles.salaryTable}>
-                                  <thead><tr><th className={styles.salaryThLeft}>Component</th><th className={styles.salaryThRight}>Amount</th></tr></thead>
-                                  <tbody>
-                                    {displayData.earnings.map((item, i) => (
-                                      <tr key={i}><td className={styles.salaryTdLeft}>{item.component}</td><td className={styles.salaryTdRight}>{typeof item.amount === 'number' ? item.amount.toLocaleString() : item.amount}</td></tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
+                              <Box sx={{ mt: 2 }}>
+                                <Typography variant="subtitle2" gutterBottom>Earnings</Typography>
+                                <TableContainer component={Paper} variant="outlined">
+                                  <Table size="small">
+                                    <TableHead>
+                                      <TableRow>
+                                        <TableCell>Component</TableCell>
+                                        <TableCell align="right">Amount</TableCell>
+                                      </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                      {displayData.earnings.map((item, i) => (
+                                        <TableRow key={i}>
+                                          <TableCell>{item.component}</TableCell>
+                                          <TableCell align="right">{typeof item.amount === 'number' ? item.amount.toLocaleString() : item.amount}</TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </TableContainer>
+                              </Box>
                             )}
                             {Array.isArray(displayData.deductions) && (
-                              <div className={styles.salaryTableSection}>
-                                <h4 className={styles.salaryTableTitle}>Deductions</h4>
-                                <table className={styles.salaryTable}>
-                                  <thead><tr><th className={styles.salaryThLeft}>Component</th><th className={styles.salaryThRight}>Amount</th></tr></thead>
-                                  <tbody>
-                                    {displayData.deductions.map((item, i) => (
-                                      <tr key={i}><td className={styles.salaryTdLeft}>{item.component}</td><td className={styles.salaryTdRight}>{typeof item.amount === 'number' ? item.amount.toLocaleString() : item.amount}</td></tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
+                              <Box sx={{ mt: 2 }}>
+                                <Typography variant="subtitle2" gutterBottom>Deductions</Typography>
+                                <TableContainer component={Paper} variant="outlined">
+                                  <Table size="small">
+                                    <TableHead>
+                                      <TableRow>
+                                        <TableCell>Component</TableCell>
+                                        <TableCell align="right">Amount</TableCell>
+                                      </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                      {displayData.deductions.map((item, i) => (
+                                        <TableRow key={i}>
+                                          <TableCell>{item.component}</TableCell>
+                                          <TableCell align="right">{typeof item.amount === 'number' ? item.amount.toLocaleString() : item.amount}</TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </TableContainer>
+                              </Box>
                             )}
-                            <div className={styles.salaryTotals}>
+                            <Box sx={{ mt: 2, borderTop: 1, borderColor: 'divider', pt: 1 }}>
                               {displayData.totalEarnings != null && (
-                                <div className={styles.salaryTotalRow}><span className={styles.salaryTotalLabel}>Total Earnings</span><span className={styles.salaryTotalValue}>{typeof displayData.totalEarnings === 'number' ? displayData.totalEarnings.toLocaleString() : displayData.totalEarnings}</span></div>
+                                <Typography variant="body2"><strong>Total Earnings:</strong> {typeof displayData.totalEarnings === 'number' ? displayData.totalEarnings.toLocaleString() : displayData.totalEarnings}</Typography>
                               )}
-                              {displayData.totalDeductions != null && (
-                                <div className={styles.salaryTotalRow}><span className={styles.salaryTotalLabel}>Total Deductions</span><span className={styles.salaryTotalValue}>{typeof displayData.totalDeductions === 'number' ? displayData.totalDeductions.toLocaleString() : displayData.totalDeductions}</span></div>
+                              {ocrResults[doc.id].extractedData.totalDeductions != null && (
+                                <Typography variant="body2"><strong>Total Deductions:</strong> {typeof ocrResults[doc.id].extractedData.totalDeductions === 'number' ? ocrResults[doc.id].extractedData.totalDeductions.toLocaleString() : ocrResults[doc.id].extractedData.totalDeductions}</Typography>
                               )}
-                              {displayData.netSalary != null && (
-                                <div className={`${styles.salaryTotalRow} ${styles.salaryNetRow}`}><span className={styles.salaryTotalLabel}>Net Salary</span><span className={styles.salaryTotalValue}>{typeof displayData.netSalary === 'number' ? displayData.netSalary.toLocaleString() : displayData.netSalary}</span></div>
+                              {ocrResults[doc.id].extractedData.netSalary != null && (
+                                <Typography variant="body2" fontWeight={700} color="primary.main"><strong>Net Salary:</strong> {typeof ocrResults[doc.id].extractedData.netSalary === 'number' ? ocrResults[doc.id].extractedData.netSalary.toLocaleString() : ocrResults[doc.id].extractedData.netSalary}</Typography>
                               )}
-                            </div>
-                          </div>
+                            </Box>
+                          </Box>
                         ) : (
-                          <div className={styles.dataGrid}>
-                            {Object.entries(displayData).map(([key, value]) => (
-                              <div key={key} className={styles.dataItem}>
-                                <span className={styles.dataKey}>{key}:</span>
-                                <span className={styles.dataValue}>
-                                  {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
-                                </span>
-                              </div>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+                            {Object.entries(ocrResults[doc.id].extractedData).map(([key, value]) => (
+                              <Box key={key}>
+                                <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'capitalize' }}>{key.replace(/([A-Z])/g, ' $1')}</Typography>
+                                <Typography variant="body2">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</Typography>
+                              </Box>
                             ))}
-                          </div>
+                          </Box>
                         )
                       ) : (
-                        <p className={styles.noData}>No meaningful data extracted</p>
+                        <Typography variant="body2" color="text.secondary">No meaningful data extracted</Typography>
                       )}
-                    </div>
-                    <div className={styles.dataCardFooter}>
-                      <span className={styles.ocrModel}>Model: {ocrResults[doc.id].model}</span>
-                      {ocrResults[doc.id].originalExtractedData && (
-                        <button
-                          onClick={() => setShowOriginal(prev => ({ ...prev, [doc.id]: !prev[doc.id] }))}
-                          className={styles.translateToggle}
-                        >
-                          {showOriginal[doc.id] ? '🌐 Show English' : '🔄 Show Original'}
-                        </button>
+
+                      {/* Format Validation Results */}
+                      {ocrResults[doc.id].formatValidation && (
+                        <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+                          <Typography variant="subtitle2" gutterBottom>
+                            Format Validation
+                            <Chip
+                              label={ocrResults[doc.id].formatValidation.valid ? 'PASS' : 'FAIL'}
+                              size="small"
+                              color={ocrResults[doc.id].formatValidation.valid ? 'success' : 'error'}
+                              sx={{ ml: 1 }}
+                            />
+                          </Typography>
+                          {Object.entries(ocrResults[doc.id].formatValidation.fieldResults || {}).map(([field, result]) => (
+                            <Box key={field} sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                              <Chip label={result.valid ? '✓' : '✗'} size="small" color={result.valid ? 'success' : 'error'} sx={{ minWidth: 28 }} />
+                              <Box>
+                                <Typography variant="caption">{field}: {result.value || 'N/A'}</Typography>
+                                {result.errors.length > 0 && result.errors.map((e, i) => (
+                                  <Typography key={i} variant="caption" color="error" display="block">{e}</Typography>
+                                ))}
+                              </Box>
+                            </Box>
+                          ))}
+                        </Box>
                       )}
-                      <button
+                    </Box>
+                    <Divider />
+                    {/* <Box sx={{ p: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Typography variant="caption" color="text.secondary">Model: {ocrResults[doc.id].model}</Typography>
+                      <Button size="small"
                         onClick={async () => { await handleValidateOCR(doc.id, doc.originalName); }}
-                        disabled={validateLoading[doc.id]}
-                        className={styles.validateDocBtn}
-                      >
-                        {validateLoading[doc.id] ? '⏳ Validating...' : '✓ Validate'}
-                      </button>
-                    </div>
-                  </div>
+                        disabled={validateLoading[doc.id]}>
+                        {validateLoading[doc.id] ? 'Validating...' : 'Validate'}
+                      </Button>
+                    </Box> */}
+                  </Paper>
                   );
                 })()}
 
                 {/* Validation Results */}
                 {validationResults[doc.id] && (
-                  <div className={styles.dataCard}>
-                    <div className={styles.dataCardHeader}>
-                      <span>✓ Validation Results</span>
-                      <span className={`${styles.validationBadge} ${validationResults[doc.id].status === 'VALID' ? styles.statusValid : styles.statusInvalid}`}>
-                        {validationResults[doc.id].status === 'VALID' ? 'VALID' : 'NEEDS REVIEW'}
-                      </span>
-                    </div>
-                    <div className={styles.dataCardBody}>
-                      <div className={styles.validationStats}>
-                        <span className={styles.validationStat}>
-                          <strong>{validationResults[doc.id].summary?.matchedFields || 0}</strong> / {validationResults[doc.id].summary?.totalFields || 0} fields matched
-                        </span>
-                        <span className={styles.validationConfidence}>
-                          {validationResults[doc.id].summary?.averageConfidence || 0}% confidence
-                        </span>
-                      </div>
-                      <div className={styles.validationFields}>
-                        {validationResults[doc.id].fieldResults &&
-                          Object.entries(validationResults[doc.id].fieldResults).map(([fieldKey, field]) => (
-                            <div key={fieldKey} className={`${styles.validationField} ${field.matched ? styles.fieldMatched : styles.fieldUnmatched}`}>
-                              <span className={styles.fieldIcon}>{field.matched ? '✓' : '✗'}</span>
-                              <div className={styles.fieldContent}>
-                                <span className={styles.fieldName}>{field.label}</span>
-                                <span className={styles.fieldOcrValue}>{field.ocrValue || 'N/A'}</span>
-                              </div>
-                              <span className={styles.fieldConfidence}>{field.confidence}%</span>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  </div>
+                  <Paper sx={{ borderRadius: 2 }}>
+                    <Box sx={{ p: 1.5, bgcolor: 'grey.50', borderBottom: 1, borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="subtitle2">Validation Results</Typography>
+                      <Chip
+                        label={validationResults[doc.id].status === 'VALID' ? 'VALID' : 'NEEDS REVIEW'}
+                        size="small"
+                        color={validationResults[doc.id].status === 'VALID' ? 'success' : 'warning'}
+                      />
+                    </Box>
+                    <Box sx={{ p: 2 }}>
+                      <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                        <Chip label={`${validationResults[doc.id].summary?.matchedFields || 0} / ${validationResults[doc.id].summary?.totalFields || 0} fields matched`} variant="outlined" size="small" />
+                        <Chip label={`${validationResults[doc.id].summary?.averageConfidence || 0}% confidence`} variant="outlined" size="small" />
+                      </Box>
+                      {validationResults[doc.id].fieldResults &&
+                        Object.entries(validationResults[doc.id].fieldResults).map(([fieldKey, field]) => (
+                          <Box key={fieldKey} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 1, borderBottom: 1, borderColor: 'divider', '&:last-child': { borderBottom: 0 } }}>
+                            <Chip label={field.matched ? '✓' : '✗'} size="small" color={field.matched ? 'success' : 'error'} sx={{ minWidth: 32 }} />
+                            <Box sx={{ flex: 1 }}>
+                              <Typography variant="body2" fontWeight={500}>{field.label}</Typography>
+                              <Typography variant="caption" color="text.secondary">{field.ocrValue || 'N/A'}</Typography>
+                            </Box>
+                            <Chip label={`${field.confidence}%`} size="small" variant="outlined" />
+                          </Box>
+                        ))}
+                    </Box>
+                  </Paper>
                 )}
 
-                {/* Security Check */}
+                {/* Security Check Results */}
                 {tamperingResults[doc.id] && (
-                  <div className={styles.securityCard}>
-                    <div className={styles.securityHeader}>
-                      <div className={styles.securityTitleRow}>
-                        <span className={styles.securityIcon}>{tamperingResults[doc.id].safe ? '✅' : '⚠️'}</span>
-                        <strong>Security Check</strong>
-                      </div>
-                      <div className={styles.securityBadges}>
-                        {tamperingResults[doc.id].cached && <span className={styles.cachedBadge}>Cached</span>}
-                        <span className={`${styles.riskBadge} ${styles[`risk${tamperingResults[doc.id].riskLevel}`]}`}>
-                          {tamperingResults[doc.id].riskLevel.toUpperCase()}
-                        </span>
-                      </div>
-                    </div>
-                    <div className={styles.riskGauge}>
-                      <div className={styles.riskGaugeScoreRow}>
-                        <span className={styles.riskGaugeSide}>Safe</span>
-                        <span className={`${styles.riskGaugeBadge} ${styles[`badge${tamperingResults[doc.id].riskLevel}`]}`}>
-                          {tamperingResults[doc.id].riskScore}
-                        </span>
-                        <span className={styles.riskGaugeSide}>High</span>
-                      </div>
-                      <div className={styles.riskGaugeBar}>
-                        <div className={`${styles.riskGaugeFill} ${styles.gaugeFill} ${styles[`gauge${tamperingResults[doc.id].riskLevel}`]}`}
-                          style={{ width: `${Math.min(tamperingResults[doc.id].riskScore, 100)}%` }}
+                  <Paper sx={{ borderRadius: 2 }}>
+                    <Box sx={{ p: 1.5, bgcolor: 'grey.50', borderBottom: 1, borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="subtitle2">Security Check</Typography>
+                      {tamperingResults[doc.id].cached && <Chip label="Cached" size="small" variant="outlined" />}
+                      <Chip
+                        label={tamperingResults[doc.id].riskLevel}
+                        size="small"
+                        color={tamperingResults[doc.id].riskLevel === 'low' ? 'success' : tamperingResults[doc.id].riskLevel === 'medium' ? 'warning' : 'error'}
+                        sx={{ ml: 'auto' }}
+                      />
+                    </Box>
+                    <Box sx={{ p: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                        <Typography variant="caption" color="text.secondary">Safe</Typography>
+                        <LinearProgress
+                          variant="determinate"
+                          value={Math.min(tamperingResults[doc.id].riskScore, 100)}
+                          sx={{
+                            flex: 1, height: 8, borderRadius: 4,
+                            bgcolor: 'grey.200',
+                            '& .MuiLinearProgress-bar': {
+                              bgcolor: tamperingResults[doc.id].riskLevel === 'low' ? 'success.main'
+                                : tamperingResults[doc.id].riskLevel === 'medium' ? 'warning.main'
+                                : 'error.main',
+                            },
+                          }}
                         />
-                      </div>
-                    </div>
-                    <p className={styles.securitySummary}>{tamperingResults[doc.id].summary}</p>
+                        <Chip label={tamperingResults[doc.id].riskScore} size="small" color={tamperingResults[doc.id].riskLevel === 'low' ? 'success' : tamperingResults[doc.id].riskLevel === 'medium' ? 'warning' : 'error'} />
+                        <Typography variant="caption" color="text.secondary">High</Typography>
+                      </Box>
+                      <Typography variant="body2" color="text.secondary">{tamperingResults[doc.id].summary}</Typography>
 
-                    {tamperingResults[doc.id].checks && (
-                      <div className={styles.securityChecks}>
-                        {Object.entries(tamperingResults[doc.id].checks).map(([key, check]) => (
-                          <div key={key} className={`${styles.securityCheckItem} ${check.passed ? styles.checkPass : styles.checkFail}`}>
-                            <span className={styles.checkIcon}>{check.passed ? '✓' : '✗'}</span>
-                            <div className={styles.checkInfo}>
-                              <span className={styles.checkName}>{key.charAt(0).toUpperCase() + key.slice(1)}</span>
-                              <span className={styles.checkMessage}>{check.message}</span>
-                            </div>
-                            {check.risk > 0 && <span className={styles.checkRisk}>+{check.risk}</span>}
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                      {tamperingResults[doc.id].checks && (
+                        <Box sx={{ mt: 2 }}>
+                          {Object.entries(tamperingResults[doc.id].checks).map(([key, check]) => (
+                            <Box key={key} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5 }}>
+                              <Chip label={check.passed ? '✓' : '✗'} size="small" color={check.passed ? 'success' : 'error'} sx={{ minWidth: 28 }} />
+                              <Box sx={{ flex: 1 }}>
+                                <Typography variant="caption" fontWeight={500} sx={{ textTransform: 'capitalize' }}>{key}</Typography>
+                                <Typography variant="caption" color="text.secondary" display="block">{check.message}</Typography>
+                              </Box>
+                              {check.risk > 0 && <Chip label={`+${check.risk}`} size="small" variant="outlined" color="warning" />}
+                            </Box>
+                          ))}
+                        </Box>
+                      )}
 
-                    {tamperingResults[doc.id].referenceComparison?.used && (
-                      <div className={styles.refSection}>
-                        <div className={styles.refHeader}>
-                          <span>📋 Reference Comparison</span>
-                          <span className={styles.refCountBadge}>{tamperingResults[doc.id].referenceComparison.referenceCount} samples</span>
-                        </div>
-                        {tamperingResults[doc.id].referenceComparison.similarityScore !== null && (
-                          <div className={styles.refSimilarityBar}>
-                            <div className={styles.refSimFill} style={{ width: `${tamperingResults[doc.id].referenceComparison.similarityScore}%` }} />
-                            <span className={styles.refSimLabel}>{tamperingResults[doc.id].referenceComparison.similarityScore}% match</span>
-                          </div>
-                        )}
-                        {tamperingResults[doc.id].referenceComparison.discrepancies?.length > 0 && (
-                          <ul className={styles.refDiscList}>
-                            {tamperingResults[doc.id].referenceComparison.discrepancies.map((d, i) => <li key={i}>{d}</li>)}
-                          </ul>
-                        )}
-                      </div>
-                    )}
-
-                    {tamperingResults[doc.id].aiAnalysis?.success && (
-                      <div className={styles.aiSection}>
-                        <div className={styles.aiHeader}>
-                          <span>🤖 AI Forensic Analysis</span>
-                          <div className={styles.aiBadges}>
-                            <span className={`${styles.verdictBadge} ${styles[tamperingResults[doc.id].aiAnalysis.verdict] || ''}`}>
-                              {(tamperingResults[doc.id].aiAnalysis.verdict || 'unknown').replace('_', ' ')}
-                            </span>
-                            <span className={`${styles.confBadge} ${styles[tamperingResults[doc.id].aiAnalysis.confidence] || ''}`}>
-                              {tamperingResults[doc.id].aiAnalysis.confidence}
-                            </span>
-                          </div>
-                        </div>
-                        {tamperingResults[doc.id].aiAnalysis.explanation && (
-                          <p className={styles.aiExplanation}>{tamperingResults[doc.id].aiAnalysis.explanation}</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                      {tamperingResults[doc.id].aiAnalysis?.success && (
+                        <Box sx={{ mt: 2, p: 1.5, bgcolor: 'grey.50', borderRadius: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                            <Typography variant="caption" fontWeight={600}>{tamperingResults[doc.id].aiAnalysis.verdict?.replace(/_/g, ' ')}</Typography>
+                            <Chip label={tamperingResults[doc.id].aiAnalysis.confidence} size="small" variant="outlined" />
+                          </Box>
+                          {tamperingResults[doc.id].aiAnalysis.explanation && (
+                            <Typography variant="caption" color="text.secondary">{tamperingResults[doc.id].aiAnalysis.explanation}</Typography>
+                          )}
+                        </Box>
+                      )}
+                    </Box>
+                  </Paper>
                 )}
 
-                {/* Empty state */}
+                {/* Empty State */}
                 {!ocrResults[doc.id] && !tamperingResults[doc.id] && !validationResults[doc.id] && (
-                  <div className={styles.dataEmpty}>
-                    <span className={styles.dataEmptyIcon}>📋</span>
-                    <p>Select an action above to analyze this document</p>
-                    <div className={styles.dataEmptyHints}>
-                      <span>🔍 Extract OCR to read text data</span>
-                      <span>🔐 Check Security for tampering analysis</span>
-                    </div>
-                  </div>
+                  <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 2 }}>
+                    <ImageIcon sx={{ fontSize: 48, color: 'grey.300', mb: 1 }} />
+                    <Typography variant="body1" color="text.secondary" gutterBottom>
+                      Select an action above to analyze this document
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      Extract OCR to read text data
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      Check Security for tampering analysis
+                    </Typography>
+                  </Paper>
                 )}
-              </div>
-            </div>
-          );
-        })()}
+              </Box>
+            </Box>
+          )}
 
-        {/* Empty state */}
-        {documents.length === 0 && (
-          <div className={styles.emptyDocuments}>
-            <div className={styles.emptyIcon}>📂</div>
-            <p className={styles.emptyTitle}>No Documents Yet</p>
-            <p className={styles.emptyText}>Upload your first document to get started</p>
-          </div>
-        )}
-      </div>
-
-        {/* Cross-Validation Results Section */}
-        {validationResults.__crossValidation__ && (
-          <div className={styles.crossValidationSection}>
-            <div className={styles.crossValidationHeader}>
-              <h3 className={styles.crossValidationTitle}>
-                <span className={styles.crossIcon}>🔄</span>
-                Cross-Document Validation Results
-              </h3>
-            </div>
-
-            {validationResults.__crossValidation__.crossDocumentIssues &&
-             validationResults.__crossValidation__.crossDocumentIssues.length > 0 ? (
-              <div className={styles.crossValidationIssues}>
-                {validationResults.__crossValidation__.crossDocumentIssues.map((issue, idx) => (
-                  <div key={idx} className={`${styles.issueCard} ${styles[`severity${issue.severity}`]}`}>
-                    <div className={styles.issueHeader}>
-                      <span className={styles.issueIcon}>⚠️</span>
-                      <div className={styles.issueInfo}>
-                        <div className={styles.issueField}>{issue.field}</div>
-                        <div className={styles.issueSeverity}>{issue.severity} Priority</div>
-                      </div>
-                    </div>
-                    <div className={styles.issueMessage}>{issue.message}</div>
-                    {issue.details && (
-                      <div className={styles.issueDetails}>
-                        {Object.entries(issue.details).map(([value, docIds]) => (
-                          <div key={value} className={styles.detailRow}>
-                            <span className={styles.detailValue}>"{value}"</span>
-                            {/* <span className={styles.detailDocs}>
-                              found in: {Array.isArray(docIds) ? docIds.join(', ') : docIds}
-                            </span> */}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className={styles.crossValidationSuccess}>
-                <span className={styles.successIcon}>✓</span>
-                <div>
-                  <div className={styles.successTitle}>All Documents Consistent</div>
-                  <div className={styles.successText}>
-                    No inconsistencies found across {Object.keys(validationResults.__crossValidation__.validations || {}).length} documents
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    
+          {/* Cross-Validation Results */}
+          {validationResults.__crossValidation__ && (
+            <Paper sx={{ mt: 3, borderRadius: 2 }}>
+              <Box sx={{ p: 1.5, bgcolor: 'grey.50', borderBottom: 1, borderColor: 'divider' }}>
+                <Typography variant="h6">Cross-Document Validation Results</Typography>
+              </Box>
+              <Box sx={{ p: 2 }}>
+                {validationResults.__crossValidation__.crossDocumentIssues?.length > 0 ? (
+                  validationResults.__crossValidation__.crossDocumentIssues.map((issue, idx) => (
+                    <Box key={idx} sx={{ p: 2, mb: 1, border: 1, borderColor: issue.severity === 'HIGH' ? 'error.main' : 'warning.main', borderRadius: 1, bgcolor: issue.severity === 'HIGH' ? 'error.50' : 'warning.50' }}>
+                      <Typography variant="subtitle2" color={issue.severity === 'HIGH' ? 'error.dark' : 'warning.dark'}>
+                        {issue.field}
+                      </Typography>
+                      <Typography variant="body2">{issue.message}</Typography>
+                      {issue.details && (
+                        <Box sx={{ mt: 1 }}>
+                          {Object.entries(issue.details).map(([value, docIds]) => (
+                            <Typography key={value} variant="caption" display="block">
+                              &quot;{value}&quot; found in: {Array.isArray(docIds) ? docIds.join(', ') : docIds}
+                            </Typography>
+                          ))}
+                        </Box>
+                      )}
+                    </Box>
+                  ))
+                ) : (
+                  <Box sx={{ textAlign: 'center', py: 2 }}>
+                    <Typography variant="h6" color="success.main">✓ All Documents Consistent</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      No inconsistencies found across {Object.keys(validationResults.__crossValidation__.validations || {}).length} documents
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            </Paper>
+          )}
+        </Box>
+      )}
+    </Box>
   );
 };
 
