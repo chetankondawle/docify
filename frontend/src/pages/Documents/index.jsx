@@ -40,6 +40,7 @@ import ImageIcon from '@mui/icons-material/Image';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
+import WarningIcon from '@mui/icons-material/Warning';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CloseIcon from '@mui/icons-material/Close';
 
@@ -828,71 +829,125 @@ const DocumentsPage = () => {
                 </Box>
 
                 <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
-                  {validationResults.__crossValidation__.crossDocumentIssues?.length > 0 ? (
-                    (() => {
-                      const issues = validationResults.__crossValidation__.crossDocumentIssues;
-                      const fields = issues.map(i => i.field);
-                      const allDocIds = [...new Set(issues.flatMap(i =>
-                        Object.values(i.details || {}).flatMap(v => Array.isArray(v) ? v : [v])
-                      ))];
-                      const docs = allDocIds.map(id => documents.find(d => d.id === Number(id))).filter(Boolean);
+                  {(() => {
+                    const validations = validationResults.__crossValidation__.validations || {};
+                    const issues = validationResults.__crossValidation__.crossDocumentIssues || [];
+                    const docIds = Object.keys(validations);
 
-                      const getValue = (docId, fieldName) => {
-                        const issue = issues.find(i => i.field === fieldName);
-                        if (!issue) return null;
-                        for (const [value, docIds] of Object.entries(issue.details || {})) {
-                          const ids = Array.isArray(docIds) ? docIds : [docIds];
-                          if (ids.map(Number).includes(Number(docId))) return value;
+                    const docs = docIds
+                      .map(id => documents.find(d => String(d.id) === String(id)))
+                      .filter(Boolean);
+
+                    const fieldLabels = [...new Set(
+                      Object.values(validations).flatMap(v =>
+                        Object.values(v.fieldResults || {}).map(f => f.label)
+                      )
+                    )];
+
+                    const formatRawKey = (key) => key
+                      .replace(/[_-]/g, ' ')
+                      .replace(/\b\w/g, c => c.toUpperCase());
+
+                    const rawFieldLabels = [...new Set(
+                      docs.flatMap(doc => {
+                        const raw = ocrResults[doc.id]?.extractedData || {};
+                        return Object.keys(raw)
+                          .filter(k => {
+                            const label = formatRawKey(k);
+                            return !fieldLabels.includes(label) && !k.startsWith('_') && !Array.isArray(raw[k]) && typeof raw[k] !== 'object';
+                          })
+                          .map(k => formatRawKey(k));
+                      })
+                    )];
+
+                    const nameDobLabels = [...fieldLabels, ...rawFieldLabels].filter(f =>
+                      /name/i.test(f) || /date.?of.?birth|dob|birth/i.test(f)
+                    );
+
+                    const getFieldKey = (docId, label) => {
+                      const vr = validations[docId];
+                      if (!vr) return null;
+                      const entry = Object.entries(vr.fieldResults || {}).find(
+                        ([, f]) => f.label === label
+                      );
+                      return entry ? entry[0] : null;
+                    };
+
+                    const getOcrValue = (docId, label) => {
+                      const key = getFieldKey(docId, label);
+                      if (key) return validations[docId]?.fieldResults?.[key]?.ocrValue || null;
+                      const lookupId = docId;
+                      const raw = ocrResults[lookupId]?.extractedData || ocrResults[String(lookupId)]?.extractedData || {};
+                      if (Object.keys(raw).length === 0) return null;
+                      const rawEntry = Object.entries(raw).find(([k]) => formatRawKey(k) === label);
+                      return rawEntry ? rawEntry[1] : null;
+                    };
+
+                    const getIssueValue = (docId, fieldName) => {
+                      const issue = issues.find(i => i.field === fieldName);
+                      if (!issue) return null;
+                      for (const [value, docIds] of Object.entries(issue.details || {})) {
+                        const ids = Array.isArray(docIds) ? docIds : [docIds];
+                        if (ids.map(String).includes(String(docId))) return value;
+                      }
+                      return null;
+                    };
+
+                    const isFieldInIssue = (fieldName) =>
+                      issues.some(i => i.field === fieldName);
+
+                    const normalizeDate = (dateStr) => {
+                      if (!dateStr) return null;
+                      const d = new Date(dateStr);
+                      if (!isNaN(d.getTime())) {
+                        return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                      }
+                      const parts = dateStr.split(/[/\-.]/);
+                      if (parts.length === 3) {
+                        const [a, b, c] = parts.map(Number);
+                        const year = c > 31 ? c : a;
+                        const day = c > 31 ? a : b;
+                        const month = c > 31 ? b : a;
+                        const parsed = new Date(year, month - 1, day);
+                        if (!isNaN(parsed.getTime())) {
+                          return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
                         }
-                        return null;
+                      }
+                      return dateStr;
+                    };
+
+                    const isDateField = (fieldName) => /date|dob|birth/i.test(fieldName);
+
+                    const getUserFieldValue = (fieldName) => {
+                      const map = {
+                        'Name': userInfo?.username,
+                        'Full Name': userInfo?.username,
+                        'Employee Name': userInfo?.username,
+                        'Date of Birth': userInfo?.dob ? normalizeDate(userInfo.dob) : null,
                       };
+                      return map[fieldName] || null;
+                    };
 
-                      const normalizeDate = (dateStr) => {
-                        if (!dateStr) return null;
-                        const d = new Date(dateStr);
-                        if (!isNaN(d.getTime())) {
-                          return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-                        }
-                        const parts = dateStr.split(/[/\-.]/);
-                        if (parts.length === 3) {
-                          const [a, b, c] = parts.map(Number);
-                          const year = c > 31 ? c : a;
-                          const day = c > 31 ? a : b;
-                          const month = c > 31 ? b : a;
-                          const parsed = new Date(year, month - 1, day);
-                          if (!isNaN(parsed.getTime())) {
-                            return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-                          }
-                        }
-                        return dateStr;
-                      };
+                    const issueCount = issues.length;
 
-                      const isDateField = (fieldName) => /date|dob|birth/i.test(fieldName);
-
-                      const getUserFieldValue = (fieldName) => {
-                        const map = {
-                          'Name': userInfo?.username,
-                          'Full Name': userInfo?.username,
-                          'Date of Birth': userInfo?.dob ? normalizeDate(userInfo.dob) : null,
-                          'Address': userInfo?.address,
-                          'Gender': null,
-                          'Father\'s Name': null,
-                          'Employee Name': userInfo?.username,
-                        };
-                        return map[fieldName] || null;
-                      };
-
-                      return (
-                        <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
-                          <Table size="small">
-                            <TableHead>
-                              <TableRow sx={{ bgcolor: 'grey.100' }}>
-                                <TableCell sx={{ fontWeight: 600 }}>Document</TableCell>
-                                <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
-                                {fields.map(f => (
-                                  <TableCell key={f} sx={{ fontWeight: 600 }}>{f}</TableCell>
-                                ))}
-                              </TableRow>
+                    return (
+                      <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow sx={{ bgcolor: 'grey.100' }}>
+                              <TableCell sx={{ fontWeight: 600 }}>Document</TableCell>
+                              <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
+                              {nameDobLabels.map(f => (
+                                <TableCell key={f} sx={{ fontWeight: 600 }}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    {f}
+                                    {isFieldInIssue(f) && (
+                                      <WarningIcon sx={{ fontSize: 14, color: 'warning.main' }} />
+                                    )}
+                                  </Box>
+                                </TableCell>
+                              ))}
+                            </TableRow>
                             </TableHead>
                             <TableBody>
                               {/* User Data Row */}
@@ -905,7 +960,7 @@ const DocumentsPage = () => {
                                     </Box>
                                   </TableCell>
                                   <TableCell><Typography variant="caption" color="text.disabled">—</Typography></TableCell>
-                                  {fields.map(f => {
+                                  {nameDobLabels.map(f => {
                                     const userVal = getUserFieldValue(f);
                                     return (
                                       <TableCell key={f} sx={{ minWidth: 140 }}>
@@ -924,13 +979,6 @@ const DocumentsPage = () => {
                               {docs.map((doc) => {
                                 const originalName = doc?.originalName || `Doc #${doc.id}`;
                                 const docType = doc ? formatDocType(doc.documentType) : '—';
-                                const hasMismatch = fields.some(f => {
-                                  const docVal = getValue(doc.id, f);
-                                  const userVal = getUserFieldValue(f);
-                                  if (!userVal || !docVal) return false;
-                                  const docNormalized = isDateField(f) ? normalizeDate(docVal) : docVal;
-                                  return docNormalized && docNormalized.toLowerCase() !== userVal.toLowerCase();
-                                });
                                 return (
                                   <TableRow key={doc.id} sx={{ '&:last-child td': { borderBottom: 0 } }}>
                                     <TableCell>
@@ -942,24 +990,39 @@ const DocumentsPage = () => {
                                     <TableCell>
                                       <Chip label={docType} size="small" variant="outlined" color="primary" sx={{ height: 22 }} />
                                     </TableCell>
-                                    {fields.map((f, fi) => {
-                                      const val = getValue(doc.id, f);
-                                      const displayVal = isDateField(f) && val ? normalizeDate(val) : val;
+                                    {nameDobLabels.map(f => {
+                                      const issueVal = getIssueValue(doc.id, f);
+                                      const validVal = issueVal !== null ? issueVal : getOcrValue(doc.id, f);
+                                      const fieldKey = getFieldKey(doc.id, f);
+                                      const matched = fieldKey ? validations[doc.id]?.fieldResults?.[fieldKey]?.matched : null;
+                                      const displayVal = validVal !== null && validVal !== undefined ? validVal : null;
+                                      const normalizedVal = isDateField(f) && typeof displayVal === 'string' ? normalizeDate(displayVal) : displayVal;
                                       const userVal = getUserFieldValue(f);
-                                      const isMismatch = userVal && displayVal && displayVal.toLowerCase() !== userVal.toLowerCase();
-                                      const isLast = fi === fields.length - 1;
+                                      const inIssue = issueVal !== null;
+                                      const displayStr = typeof normalizedVal === 'string' ? normalizedVal : typeof normalizedVal === 'number' ? String(normalizedVal) : Array.isArray(normalizedVal) || typeof normalizedVal === 'object' ? null : normalizedVal;
+                                      const isMismatch = userVal && displayStr && displayStr.toLowerCase() !== userVal.toLowerCase();
                                       return (
-                                        <TableCell key={f} sx={{ minWidth: 140 }}>
-                                          {displayVal === null ? (
+                                        <TableCell key={f} sx={{
+                                          minWidth: 140,
+                                          bgcolor: inIssue ? '#fffbeb' : matched === false ? '#fef2f2' : 'inherit',
+                                        }}>
+                                          {normalizedVal === null || normalizedVal === undefined ? (
                                             <Typography variant="caption" color="text.disabled" fontStyle="italic">—</Typography>
-                                          ) : displayVal === '(not extracted)' ? (
+                                          ) : normalizedVal === '(not extracted)' ? (
                                             <Typography variant="caption" color="text.disabled" fontStyle="italic">Not extracted</Typography>
+                                          ) : displayStr === null ? (
+                                            <Typography variant="caption" color="text.disabled" fontStyle="italic">Complex data</Typography>
                                           ) : (
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                              <Typography variant="body2" color="text.primary">
-                                                {displayVal}
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                                              <Typography variant="body2" color={isMismatch ? 'warning.dark' : 'text.primary'}>
+                                                {displayStr}
                                               </Typography>
-                                              {isLast && isMismatch && <Typography variant="caption" sx={{ color: 'warning.main', fontWeight: 600, pl: 0.5 }}>MISMATCH</Typography>}
+                                              {isMismatch && (
+                                                <Chip label="MISMATCH" size="small" color="warning" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 700 }} />
+                                              )}
+                                              {matched && !isMismatch && (
+                                                <Chip label="MATCH" size="small" color="success" sx={{ height: 20, fontSize: '0.65rem', fontWeight: 700 }} />
+                                              )}
                                             </Box>
                                           )}
                                         </TableCell>
@@ -970,18 +1033,9 @@ const DocumentsPage = () => {
                               })}
                             </TableBody>
                           </Table>
-                        </TableContainer>
-                      );
-                    })()
-                  ) : (
-                    <Box sx={{ textAlign: 'center', py: 6 }}>
-                      <CheckCircleIcon color="success" sx={{ fontSize: 48, mb: 2 }} />
-                      <Typography variant="h6" color="success.main" gutterBottom>All Documents Consistent</Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        No inconsistencies found across {Object.keys(validationResults.__crossValidation__.validations || {}).length} documents
-                      </Typography>
-                    </Box>
-                  )}
+                          </TableContainer>
+                    );
+                  })()}
                 </Box>
                 <Divider />
                 <Box sx={{ p: 1.5, bgcolor: 'grey.50', display: 'flex', alignItems: 'center', gap: 1 }}>
