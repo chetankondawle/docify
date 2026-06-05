@@ -11,7 +11,6 @@ import Box from '@mui/material/Box';
 
 const UserFormPage = () => {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({ username: '', mobile: '', dob: '', address: '' });
   const [formData, setFormData] = useState({
     username: '',
     mobile: '',
@@ -40,43 +39,11 @@ const UserFormPage = () => {
     if (!formData.mobile.trim()) { setError('Mobile number is required'); return false; }
     if (!/^[0-9]{10}$/.test(formData.mobile)) { setError('Mobile number must be 10 digits'); return false; }
     if (!formData.dob) { setError('Date of birth is required'); return false; }
+    if (!formData.pan.trim()) { setError('PAN number is required'); return false; }
+    if (!/^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/.test(formData.pan)) { setError('PAN must be 5 letters + 4 digits + 1 letter (e.g., AAAPZ1234C)'); return false; }
+    if (!formData.salary.trim()) { setError('Salary is required'); return false; }
+    if (!/^\d+(\.\d{1,2})?$/.test(formData.salary)) { setError('Salary must be a valid number (e.g., 50000 or 50000.50)'); return false; }
     if (!formData.address.trim()) { setError('Address is required'); return false; }
-    if (!formData.username.trim()) {
-      setError('Username is required');
-      return false;
-    }
-    if (!formData.mobile.trim()) {
-      setError('Mobile number is required');
-      return false;
-    }
-    if (!/^[0-9]{10}$/.test(formData.mobile)) {
-      setError('Mobile number must be 10 digits');
-      return false;
-    }
-    if (!formData.dob) {
-      setError('Date of birth is required');
-      return false;
-    }
-    if (!formData.pan.trim()) {
-      setError('PAN number is required');
-      return false;
-    }
-    if (!/^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/.test(formData.pan)) {
-      setError('PAN must be 5 letters + 4 digits + 1 letter (e.g., AAAPZ1234C)');
-      return false;
-    }
-    if (!formData.salary.trim()) {
-      setError('Salary is required');
-      return false;
-    }
-    if (!/^\d+(\.\d{1,2})?$/.test(formData.salary)) {
-      setError('Salary must be a valid number (e.g., 50000 or 50000.50)');
-      return false;
-    }
-    if (!formData.address.trim()) {
-      setError('Address is required');
-      return false;
-    }
     return true;
   };
 
@@ -140,6 +107,31 @@ const UserFormPage = () => {
             required
           />
           <TextField
+            label="PAN Number"
+            name="pan"
+            value={formData.pan}
+            onChange={(e) => {
+              const val = e.target.value.toUpperCase();
+              setFormData((prev) => ({ ...prev, pan: val }));
+              setError(null);
+            }}
+            placeholder="e.g., AAAPZ1234C"
+            disabled={loading}
+            inputProps={{ maxLength: 10 }}
+            fullWidth
+            required
+          />
+          <TextField
+            label="Monthly Salary (₹)"
+            name="salary"
+            value={formData.salary}
+            onChange={handleInputChange}
+            placeholder="e.g., 50000"
+            disabled={loading}
+            fullWidth
+            required
+          />
+          <TextField
             label="Address"
             name="address"
             value={formData.address}
@@ -152,109 +144,6 @@ const UserFormPage = () => {
             required
           />
           <Box sx={{ mt: 1 }}>
-        <form onSubmit={handleSubmit} className={styles.form}>
-          <div className={styles.formGroup}>
-            <label htmlFor="username" className={styles.label}>
-              Username
-            </label>
-            <input
-              type="text"
-              id="username"
-              name="username"
-              value={formData.username}
-              onChange={handleInputChange}
-              className={styles.input}
-              placeholder="Enter your full name"
-              disabled={loading}
-            />
-          </div>
-
-          <div className={styles.formGroup}>
-            <label htmlFor="mobile" className={styles.label}>
-              Mobile Number
-            </label>
-            <input
-              type="tel"
-              id="mobile"
-              name="mobile"
-              value={formData.mobile}
-              onChange={handleInputChange}
-              className={styles.input}
-              placeholder="10 digit mobile number"
-              disabled={loading}
-              maxLength="10"
-            />
-          </div>
-
-          <div className={styles.formGroup}>
-            <label htmlFor="dob" className={styles.label}>
-              Date of Birth
-            </label>
-            <input
-              type="date"
-              id="dob"
-              name="dob"
-              value={formData.dob}
-              onChange={handleInputChange}
-              className={styles.input}
-              disabled={loading}
-            />
-          </div>
-
-          <div className={styles.formGroup}>
-            <label htmlFor="pan" className={styles.label}>
-              PAN Number
-            </label>
-            <input
-              type="text"
-              id="pan"
-              name="pan"
-              value={formData.pan}
-              onChange={(e) => {
-                const val = e.target.value.toUpperCase();
-                setFormData((prev) => ({ ...prev, pan: val }));
-                setError(null);
-              }}
-              className={styles.input}
-              placeholder="e.g., AAAPZ1234C"
-              disabled={loading}
-              maxLength="10"
-            />
-          </div>
-
-          <div className={styles.formGroup}>
-            <label htmlFor="salary" className={styles.label}>
-              Monthly Salary (₹)
-            </label>
-            <input
-              type="text"
-              id="salary"
-              name="salary"
-              value={formData.salary}
-              onChange={handleInputChange}
-              className={styles.input}
-              placeholder="e.g., 50000"
-              disabled={loading}
-            />
-          </div>
-
-          <div className={styles.formGroup}>
-            <label htmlFor="address" className={styles.label}>
-              Address
-            </label>
-            <textarea
-              id="address"
-              name="address"
-              value={formData.address}
-              onChange={handleInputChange}
-              className={styles.textarea}
-              placeholder="Enter your address"
-              disabled={loading}
-              rows="4"
-            />
-          </div>
-
-          <div className={styles.actions}>
             <Button type="submit" loading={loading}>
               Continue to Documents
             </Button>

@@ -92,6 +92,8 @@ const DocumentsPage = () => {
   const [crossValidationError, setCrossValidationError] = useState(null);
   const [crossValidationSuccess, setCrossValidationSuccess] = useState(false);
   const [allAvailableDocumentTypes, setAllAvailableDocumentTypes] = useState([]);
+  const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
   const [selectedTypeForUpload, setSelectedTypeForUpload] = useState('');
   const [activeTab, setActiveTab] = useState(0);
 
@@ -339,7 +341,7 @@ const DocumentsPage = () => {
           <Box sx={{ flex: 1 }}>
             <Typography variant="subtitle1" fontWeight={600}>{userInfo.username}</Typography>
             <Typography variant="body2" color="text.secondary">
-              {userInfo.mobile} &middot; {new Date(userInfo.dob).toLocaleDateString()} &middot; {userInfo.address}
+              {userInfo.mobile} &middot; {new Date(userInfo.dob).toLocaleDateString()} &middot; {userInfo.pan} &middot; ₹{Number(userInfo.salary).toLocaleString()} &middot; {userInfo.address}
             </Typography>
           </Box>
           <Button variant="outlined" size="small" onClick={handleEditUserInfo} startIcon={<EditIcon />}>
@@ -350,37 +352,6 @@ const DocumentsPage = () => {
 
       <Snackbar message={snackbar?.message} type={snackbar?.type} onClose={() => setSnackbar(null)} />
 
-      {/* --- Upload Section with Document Type Selector --- */}
-      <div className={styles.uploadSection}>
-        {/* Document Type Selector for Upload */}
-        <div className={styles.uploadTypeSelector}>
-          <label htmlFor="uploadDocumentType" className={styles.uploadLabel}>
-            Select Type for Upload:
-          </label>
-          <select
-            id="uploadDocumentType"
-            value={selectedTypeForUpload}
-            onChange={(e) => handleDocumentTypeForUploadChange(e.target.value)}
-            // Disable if loading docs or if no types are available yet
-            disabled={loading || allAvailableDocumentTypes.length === 0} 
-            className={styles.uploadSelect}
-          >
-            {allAvailableDocumentTypes.length === 0 ? (
-              <option value="">Loading types...</option>
-            ) : (
-              <>
-                <option value="">-- Select Type --</option>
-                {allAvailableDocumentTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type} {/* Display as ALL_CAPS_UNDERSCORE */}
-                  </option>
-                ))}
-              </>
-            )}
-          </select>
-        </div>
-
-        {/* File Upload Component */}
       {/* Alerts */}
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
       {successMessage && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccessMessage(null)}>{successMessage}</Alert>}
@@ -559,7 +530,7 @@ const DocumentsPage = () => {
                         <Chip label={formatDocType(ocrResults[doc.id].documentType)} size="small" color="primary" />
                       )}
                       {ocrResults[doc.id].documentLanguage && ocrResults[doc.id].documentLanguage !== 'English' && (
-                        <span className={styles.langBadge}>{ocrResults[doc.id].documentLanguage}</span>
+                        <Chip label={ocrResults[doc.id].documentLanguage} size="small" variant="outlined" color="warning" />
                       )}
                     </Box>
                     <Box sx={{ p: 2 }}>
