@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import FileUpload from '@components/common/FileUpload';
 import Button from '@components/common/Button';
 import Snackbar from '@components/common/Snackbar';
@@ -7,7 +7,7 @@ import { getAllDocuments, deleteDocument } from '@services/documentService';
 import { extractOCR, extractStructuredData, getDocumentTypes } from '@services/ocrService';
 import { checkTampering, checkImageTampering } from '@services/tamperingService';
 import { validateDocument, validateDocuments } from '@services/validateService';
-import { getUserInfo, clearUserInfo } from '@services/userFormService';
+import { getUserById, getUserInfo, clearUserInfo } from '@services/userFormService';
 
 import Container from '@mui/material/Container';
 import Box from '@mui/material/Box';
@@ -45,6 +45,8 @@ import CloseIcon from '@mui/icons-material/Close';
 
 const DocumentsPage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const userIdFromUrl = searchParams.get('userId');
 
   const formatDocType = (type) => {
     if (!type) return '';
@@ -58,6 +60,7 @@ const DocumentsPage = () => {
   const [snackbar, setSnackbar] = useState(null);
   const mountedRef = useRef(true);
   const timersRef = useRef([]);
+  const userIdRef = useRef(null);
 
   const showSnackbar = (message, type = 'error') => {
     setSnackbar({ message, type });
@@ -82,9 +85,8 @@ const DocumentsPage = () => {
 
   const [ocrLoading, setOcrLoading] = useState({});
   const [ocrResults, setOcrResults] = useState({});
-  const [showOriginal, setShowOriginal] = useState({}); // toggle original vs translated
+  const [showOriginal, setShowOriginal] = useState({});
 
-  // Tampering check states
   const [tamperingLoading, setTamperingLoading] = useState({});
   const [tamperingResults, setTamperingResults] = useState({});
   const [userInfo, setUserInfo] = useState(null);
@@ -105,7 +107,7 @@ const DocumentsPage = () => {
   const fetchDocuments = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await getAllDocuments();
+      const response = await getAllDocuments(userIdRef.current);
       setDocuments(response.data || []);
     } catch (err) {
       showSnackbar(err.message || 'Failed to fetch documents');
@@ -115,22 +117,34 @@ const DocumentsPage = () => {
   }, []);
 
   useEffect(() => {
-    const info = getUserInfo();
-    if (!info) {
-      navigate('/user-form');
-      return;
-    }
-    setUserInfo(info);
-    fetchDocuments();
-  }, [fetchDocuments]);
+    const loadUser = async () => {
+      let info = getUserInfo();
 
-  // Make latest tab active and clean up stale results when document list changes
+      if (userIdFromUrl && (!info || info.id !== userIdFromUrl)) {
+        try {
+          const response = await getUserById(userIdFromUrl);
+          info = response.data;
+        } catch {
+        }
+      }
+
+      if (!info) {
+        navigate('/user-form');
+        return;
+      }
+      setUserInfo(info);
+      userIdRef.current = info.id;
+      fetchDocuments();
+    };
+    loadUser();
+  }, [userIdFromUrl, fetchDocuments]);
+
   useEffect(() => {
     setActiveTab(documents.length > 0 ? documents.length - 1 : 0);
     const currentIds = new Set(documents.map((d) => d.id));
-    setOcrResults((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => currentIds.has(Number(id)))));
-    setTamperingResults((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => currentIds.has(Number(id)))));
-    setValidationResults((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => currentIds.has(Number(id)))));
+    setOcrResults((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => currentIds.has(id))));
+    setTamperingResults((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => currentIds.has(id))));
+    setValidationResults((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => currentIds.has(id))));
   }, [documents.length]);
 
   useEffect(() => {
@@ -323,10 +337,19 @@ const DocumentsPage = () => {
   const getBaseUrl = () =>
     import.meta.env.VITE_API_BASE_URL?.replace('/api/v1', '') || 'http://localhost:5000';
 
+  const getDocLabel = (id) => {
+    const doc = documents.find(d => String(d.id) === String(id));
+    if (!doc) return id;
+    const typeLabel = doc.documentType
+      ? doc.documentType.split('_').map(w => w === 'PAN' ? w : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+      : 'Unknown';
+    return `${typeLabel} - ${doc.originalName}`;
+  };
+
   const doc = documents.length > 0 ? documents[activeTab] : null;
 
   return (
-    <Box sx={{ pb: 4 }}>
+    <Container maxWidth="xl" sx={{ pb: 4 }}>
       {/* Page Header */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
         <ImageIcon sx={{ fontSize: 40, color: 'primary.main' }} />
@@ -391,6 +414,7 @@ const DocumentsPage = () => {
           onUploadSuccess={handleUploadSuccess}
           onUploadError={handleUploadError}
           selectedDocumentType={selectedTypeForUpload}
+          userId={userInfo?.id}
         />
       </Paper>
 
@@ -957,10 +981,19 @@ const DocumentsPage = () => {
                       <Typography variant="body2" color="text.secondary">
                         No inconsistencies found across {Object.keys(validationResults.__crossValidation__.validations || {}).length} documents
                       </Typography>
+                      <Typography variant="body2">{issue.message}</Typography>
+                      {issue.details && (
+                        <Box sx={{ mt: 1 }}>
+                          {Object.entries(issue.details).map(([value, docIds]) => (
+                            <Typography key={value} variant="caption" display="block">
+                              &quot;{value}&quot; found in: {Array.isArray(docIds) ? docIds.map(id => getDocLabel(id)).join(', ') : getDocLabel(docIds)}
+                            </Typography>
+                          ))}
+                        </Box>
+                      )}
                     </Box>
                   )}
                 </Box>
-
                 <Divider />
                 <Box sx={{ p: 1.5, bgcolor: 'grey.50', display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
@@ -973,7 +1006,7 @@ const DocumentsPage = () => {
           )}
         </Box>
       )}
-    </Box>
+    </Container>
   );
 };
 

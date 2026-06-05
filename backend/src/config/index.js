@@ -34,6 +34,11 @@ const config = {
     maxFileSize: parseInt(process.env.MAX_FILE_SIZE_BYTES, 10) || 10 * 1024 * 1024,
     maxBodySize: parseInt(process.env.MAX_BODY_SIZE_BYTES, 10) || 1024 * 1024,
   },
+  database: {
+    url: process.env.DATABASE_URL || 'postgresql://docify:docify_pass@127.0.0.1:5433/docify',
+    ssl: process.env.DB_SSL === 'true',
+    syncForce: process.env.DB_SYNC_FORCE === 'true',
+  },
 };
 
 module.exports = config;

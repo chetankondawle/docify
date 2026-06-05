@@ -1,27 +1,31 @@
-/**
- * User Form Service - Manages user information storage in localStorage
- * No backend API call - data stays in browser memory
- */
+import apiClient from './api';
+
+export const createUser = (userData) => {
+  return apiClient.post('/users', userData);
+};
+
+export const getAllUsers = () => {
+  return apiClient.get('/users');
+};
+
+export const getUserById = (id) => {
+  return apiClient.get(`/users/${id}`);
+};
+
+export const deleteUser = (id) => {
+  return apiClient.delete(`/users/${id}`);
+};
 
 const STORAGE_KEY = 'docify_user_info';
 
-/**
- * Save user information to localStorage
- * @param {Object} userData - User data object with username, mobile, dob, address
- */
 export const saveUserInfo = (userData) => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
   } catch (error) {
     console.error('Failed to save user info to localStorage:', error);
-    throw new Error('Failed to save user information');
   }
 };
 
-/**
- * Retrieve user information from localStorage
- * @returns {Object|null} User data object or null if not found
- */
 export const getUserInfo = () => {
   try {
     const data = localStorage.getItem(STORAGE_KEY);
@@ -32,9 +36,6 @@ export const getUserInfo = () => {
   }
 };
 
-/**
- * Clear user information from localStorage
- */
 export const clearUserInfo = () => {
   try {
     localStorage.removeItem(STORAGE_KEY);
@@ -43,10 +44,6 @@ export const clearUserInfo = () => {
   }
 };
 
-/**
- * Check if user information exists
- * @returns {boolean}
- */
 export const hasUserInfo = () => {
   try {
     return localStorage.getItem(STORAGE_KEY) !== null;

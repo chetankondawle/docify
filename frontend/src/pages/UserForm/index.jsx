@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from '@components/common/Button';
-import { saveUserInfo, getUserInfo } from '@services/userFormService';
+import { createUser, saveUserInfo, getUserInfo } from '@services/userFormService';
 import Container from '@mui/material/Container';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -23,11 +23,6 @@ const UserFormPage = () => {
   const [successMessage, setSuccessMessage] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    const existingData = getUserInfo();
-    if (existingData) setFormData(existingData);
-  }, []);
-
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -35,7 +30,7 @@ const UserFormPage = () => {
   };
 
   const validateForm = () => {
-    if (!formData.username.trim()) { setError('Username is required'); return false; }
+    if (!formData.username.trim()) { setError('User full name is required'); return false; }
     if (!formData.mobile.trim()) { setError('Mobile number is required'); return false; }
     if (!/^[0-9]{10}$/.test(formData.mobile)) { setError('Mobile number must be 10 digits'); return false; }
     if (!formData.dob) { setError('Date of birth is required'); return false; }
@@ -52,8 +47,12 @@ const UserFormPage = () => {
     if (!validateForm()) return;
     try {
       setLoading(true);
-      saveUserInfo(formData);
-      setSuccessMessage('User information saved successfully!');
+      const response = await createUser(formData);
+      const createdUser = response.data;
+
+      saveUserInfo(createdUser);
+
+      setSuccessMessage('User created successfully!');
       setTimeout(() => { navigate('/documents'); }, 1500);
     } catch (err) {
       setError(err.message || 'Failed to save user information');
@@ -75,7 +74,7 @@ const UserFormPage = () => {
 
         <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
           <TextField
-            label="Username"
+            label="User Full Name"
             name="username"
             value={formData.username}
             onChange={handleInputChange}
