@@ -6,6 +6,7 @@ import UserFormPage from '@pages/UserForm';
 import DocumentsPage from '@pages/Documents';
 import NotFoundPage from '@pages/NotFound';
 import ErrorBoundary from '@components/common/ErrorBoundary';
+import DemoAboutPage from './pages/DemoAbout';
 
 const App = () => {
   return (
@@ -15,6 +16,7 @@ const App = () => {
           <Route path="/" element={<HomePage />} />
           <Route path="/user-form" element={<UserFormPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
+          <Route path="/demo" element={<DemoAboutPage />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
